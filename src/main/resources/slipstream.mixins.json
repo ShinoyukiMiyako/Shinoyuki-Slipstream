@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "com.shinoyuki.slipstream.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "slipstream.refmap.json",
+  "mixins": [
+    "CompressionEncoderMixin",
+    "PacketEncoderMixin"
+  ],
+  "client": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
