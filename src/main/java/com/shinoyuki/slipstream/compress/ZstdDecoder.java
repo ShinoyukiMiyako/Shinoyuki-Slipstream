@@ -1,5 +1,6 @@
 package com.shinoyuki.slipstream.compress;
 
+import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -34,7 +35,8 @@ public final class ZstdDecoder extends ByteToMessageDecoder {
         }
         byte[] frame = new byte[in.readableBytes()];
         in.readBytes(frame);
-        byte[] payload = ZstdFrameCodec.decompress(frame, this.threshold, this.validate, ZstdContextPool.decompressor());
+        byte[] payload = ZstdFrameCodec.decompress(frame, this.threshold, this.validate,
+                SlipstreamConfig.zstdMaxUncompressedBytes(), ZstdContextPool.decompressor());
         out.add(Unpooled.wrappedBuffer(payload));
     }
 }

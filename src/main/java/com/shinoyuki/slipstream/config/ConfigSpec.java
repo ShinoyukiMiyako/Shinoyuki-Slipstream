@@ -13,6 +13,7 @@ public final class ConfigSpec {
     public static final ForgeConfigSpec.BooleanValue CHUNK_SERIALIZE_ONCE;
     public static final ForgeConfigSpec.BooleanValue ZSTD_ENABLED;
     public static final ForgeConfigSpec.IntValue ZSTD_LEVEL;
+    public static final ForgeConfigSpec.IntValue ZSTD_MAX_UNCOMPRESSED_MIB;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -63,6 +64,14 @@ public final class ConfigSpec {
                 .comment("zstd compression level on the network hot path. 1-3 trade ratio for CPU; 3 is the default.",
                          "Higher levels cost more netty-thread CPU per packet for diminishing size gains.")
                 .defineInRange("zstdLevel", 3, 1, 9);
+
+        ZSTD_MAX_UNCOMPRESSED_MIB = b
+                .comment("Decompression-bomb guard: reject a server-INBOUND (client->server) zstd frame whose",
+                         "declared uncompressed size exceeds this many MiB. Server-to-client frames are not bounded",
+                         "(the server is trusted), and the compressed input is already bounded by the outer length",
+                         "framing, so this only caps the allocation a malicious modded client could force. Raise it",
+                         "if a large-packet mod (XLPackets / PacketFixer) legitimately sends bigger inbound packets.")
+                .defineInRange("zstdMaxUncompressedMiB", 256, 8, 1024);
 
         b.pop();
         SPEC = b.build();

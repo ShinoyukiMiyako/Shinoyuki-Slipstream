@@ -9,15 +9,17 @@ import java.util.Arrays;
 /**
  * zstd framing that reproduces vanilla's compression envelope byte-for-byte (see {@code CompressionEncoder} /
  * {@code CompressionDecoder}): a leading Minecraft VarInt carries the uncompressed length, 0 meaning "stored,
- * not compressed". Only the payload codec is swapped from zlib to zstd; the discriminator and the DoS bounds
- * are identical, so the surrounding pipeline (length splitter, cipher) is untouched. Pure byte[] logic with no
- * netty/Minecraft coupling beyond {@link DecoderException}, so it unit-tests against zstd-jni alone.
+ * not compressed". Only the payload codec is swapped from zlib to zstd; the discriminator is identical, so the
+ * surrounding pipeline (length splitter, cipher) is untouched. Pure byte[] logic with no netty/Minecraft
+ * coupling beyond {@link DecoderException}, so it unit-tests against zstd-jni alone.
+ *
+ * <p>Size bounds, unlike vanilla's fixed 8 MiB / 2 MiB: the compressed input is already bounded by the outer
+ * length framing (which mods like XLPackets / PacketFixer raise to allow large packets), so no separate
+ * compressed cap is imposed here -- imposing one would reject those legitimately-large packets. Only a single
+ * configurable uncompressed bound is checked, and only on validated (server-inbound) frames, purely as a
+ * decompression-bomb guard against a malicious client; trusted server-to-client frames are not bounded.
  */
 public final class ZstdFrameCodec {
-
-    // Mirror CompressionDecoder.MAXIMUM_*; a hostile peer must not be able to declare an unbounded size.
-    public static final int MAXIMUM_UNCOMPRESSED_LENGTH = 8388608;   // 8 MiB
-    public static final int MAXIMUM_COMPRESSED_LENGTH = 2097152;     // 2 MiB
 
     public static byte[] compress(byte[] payload, int threshold, ZstdCompressCtx ctx) {
         if (payload.length < threshold) {
@@ -33,7 +35,8 @@ public final class ZstdFrameCodec {
         return out;
     }
 
-    public static byte[] decompress(byte[] frame, int threshold, boolean validate, ZstdDecompressCtx ctx) {
+    public static byte[] decompress(byte[] frame, int threshold, boolean validate, int maxUncompressed,
+                                    ZstdDecompressCtx ctx) {
         int pos = 0;
         int uncompressed = 0;
         int shift = 0;
@@ -55,15 +58,10 @@ public final class ZstdFrameCodec {
                 throw new DecoderException("Badly compressed packet - size of " + uncompressed
                         + " is below server threshold of " + threshold);
             }
-            if (uncompressed > MAXIMUM_UNCOMPRESSED_LENGTH) {
+            if (uncompressed > maxUncompressed) {
                 throw new DecoderException("Badly compressed packet - size of " + uncompressed
-                        + " is larger than protocol maximum of " + MAXIMUM_UNCOMPRESSED_LENGTH);
+                        + " is larger than configured maximum of " + maxUncompressed);
             }
-        }
-        int compressedLen = frame.length - pos;
-        if (compressedLen > MAXIMUM_COMPRESSED_LENGTH) {
-            throw new DecoderException("Badly compressed packet - compressed size of " + compressedLen
-                    + " is larger than protocol maximum of " + MAXIMUM_COMPRESSED_LENGTH);
         }
         byte[] compressed = Arrays.copyOfRange(frame, pos, frame.length);
         return ctx.decompress(compressed, uncompressed);

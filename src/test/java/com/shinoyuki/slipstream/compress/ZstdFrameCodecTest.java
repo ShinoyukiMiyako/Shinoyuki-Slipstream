@@ -19,12 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ZstdFrameCodecTest {
 
     private static final int THRESHOLD = 256;
+    private static final int MAX_UNCOMPRESSED = 256 * 1024 * 1024;   // the default zstdMaxUncompressedMiB
 
     private static byte[] roundTrip(byte[] payload, boolean validate) {
         try (ZstdCompressCtx cctx = new ZstdCompressCtx(); ZstdDecompressCtx dctx = new ZstdDecompressCtx()) {
             cctx.setLevel(3);
             byte[] frame = ZstdFrameCodec.compress(payload, THRESHOLD, cctx);
-            return ZstdFrameCodec.decompress(frame, THRESHOLD, validate, dctx);
+            return ZstdFrameCodec.decompress(frame, THRESHOLD, validate, MAX_UNCOMPRESSED, dctx);
         }
     }
 
@@ -76,18 +77,37 @@ class ZstdFrameCodecTest {
         assertEquals(0, roundTrip(new byte[0], false).length);
     }
 
+    // A large, incompressible packet compresses to > 2 MiB -- the old hard compressed cap would have rejected
+    // it (and kicked the client). With XLPackets / PacketFixer raising the framing limit such packets are real,
+    // so the codec must pass them through. Both server-inbound (validate) and server-outbound (no validate).
+    @Test
+    void largeIncompressiblePacketRoundTrips() {
+        Random r = new Random(99);
+        byte[] payload = new byte[4 * 1024 * 1024];   // 4 MiB random -> zstd cannot shrink it
+        r.nextBytes(payload);
+        try (ZstdCompressCtx cctx = new ZstdCompressCtx(); ZstdDecompressCtx dctx = new ZstdDecompressCtx()) {
+            cctx.setLevel(3);
+            byte[] frame = ZstdFrameCodec.compress(payload, THRESHOLD, cctx);
+            assertTrue(frame.length > 2 * 1024 * 1024, "expected a compressed frame past the old 2 MiB cap");
+            assertArrayEquals(payload, ZstdFrameCodec.decompress(frame, THRESHOLD, true, MAX_UNCOMPRESSED, dctx));
+            assertArrayEquals(payload, ZstdFrameCodec.decompress(frame, THRESHOLD, false, MAX_UNCOMPRESSED, dctx));
+        }
+    }
+
     @Test
     void validateRejectsDeclaredSizeBelowThreshold() {
         // VarInt(10) header with threshold 256, validate on -> rejected before any decompress.
         byte[] frame = {10, 0, 0, 0};
         try (ZstdDecompressCtx dctx = new ZstdDecompressCtx()) {
-            assertThrows(DecoderException.class, () -> ZstdFrameCodec.decompress(frame, THRESHOLD, true, dctx));
+            assertThrows(DecoderException.class,
+                    () -> ZstdFrameCodec.decompress(frame, THRESHOLD, true, MAX_UNCOMPRESSED, dctx));
         }
     }
 
     @Test
-    void validateRejectsOversizeDeclaration() {
-        int oversize = ZstdFrameCodec.MAXIMUM_UNCOMPRESSED_LENGTH + 1;
+    void validateRejectsDeclarationAboveConfiguredMax() {
+        int max = 1 * 1024 * 1024;   // 1 MiB cap for this test
+        int oversize = max + 1;
         byte[] varint = new byte[5];
         int n = 0;
         int v = oversize;
@@ -99,7 +119,21 @@ class ZstdFrameCodecTest {
         byte[] frame = new byte[n + 4];
         System.arraycopy(varint, 0, frame, 0, n);
         try (ZstdDecompressCtx dctx = new ZstdDecompressCtx()) {
-            assertThrows(DecoderException.class, () -> ZstdFrameCodec.decompress(frame, THRESHOLD, true, dctx));
+            assertThrows(DecoderException.class,
+                    () -> ZstdFrameCodec.decompress(frame, THRESHOLD, true, max, dctx));
+        }
+    }
+
+    @Test
+    void unvalidatedFrameIgnoresTheMax() {
+        // Server-to-client (validate=false): a declared size above the cap must NOT be rejected on size alone.
+        // Use a genuine round-trip so the declared size is real; a tiny cap that validate would have rejected.
+        byte[] payload = new byte[64_000];
+        new Random(5).nextBytes(payload);
+        try (ZstdCompressCtx cctx = new ZstdCompressCtx(); ZstdDecompressCtx dctx = new ZstdDecompressCtx()) {
+            cctx.setLevel(3);
+            byte[] frame = ZstdFrameCodec.compress(payload, THRESHOLD, cctx);
+            assertArrayEquals(payload, ZstdFrameCodec.decompress(frame, THRESHOLD, false, 1024, dctx));
         }
     }
 
@@ -108,7 +142,8 @@ class ZstdFrameCodecTest {
         // continuation bit set on the final byte -> VarInt never terminates within the frame.
         byte[] frame = {(byte) 0x80, (byte) 0x80};
         try (ZstdDecompressCtx dctx = new ZstdDecompressCtx()) {
-            assertThrows(DecoderException.class, () -> ZstdFrameCodec.decompress(frame, THRESHOLD, false, dctx));
+            assertThrows(DecoderException.class,
+                    () -> ZstdFrameCodec.decompress(frame, THRESHOLD, false, MAX_UNCOMPRESSED, dctx));
         }
     }
 }
