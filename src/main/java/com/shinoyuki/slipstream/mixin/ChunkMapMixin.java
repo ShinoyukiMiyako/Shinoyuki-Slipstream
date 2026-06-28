@@ -54,7 +54,8 @@ public abstract class ChunkMapMixin {
         Connection conn = cap.connection;
         Channel channel = conn.channel();
         if (channel == null) {
-            BroadcastShare.flush(cap, packet, null, probe.slipstream$uncompressedSize(), null);
+            BroadcastShare.flush(cap, packet, null, probe.slipstream$uncompressedSize(),
+                    probe.slipstream$frameCodec(), null);
             return;
         }
         EventLoop loop = channel.eventLoop();
@@ -66,7 +67,8 @@ public abstract class ChunkMapMixin {
         }, 5, TimeUnit.SECONDS);
         future.whenCompleteAsync((frame, error) -> {
             timeout.cancel(false);
-            BroadcastShare.flush(cap, packet, frame, probe.slipstream$uncompressedSize(), error);
+            BroadcastShare.flush(cap, packet, frame, probe.slipstream$uncompressedSize(),
+                    probe.slipstream$frameCodec(), error);
         }, loop);
     }
 }

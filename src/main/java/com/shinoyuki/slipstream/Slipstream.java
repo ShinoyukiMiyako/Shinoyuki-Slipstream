@@ -2,6 +2,7 @@ package com.shinoyuki.slipstream;
 
 import com.mojang.logging.LogUtils;
 import com.shinoyuki.slipstream.command.SlipstreamCommand;
+import com.shinoyuki.slipstream.compress.SlipstreamNetwork;
 import com.shinoyuki.slipstream.config.ConfigSpec;
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import com.shinoyuki.slipstream.telemetry.PacketTelemetry;
@@ -16,6 +17,7 @@ import net.minecraftforge.fml.IExtensionPoint;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.network.NetworkConstants;
@@ -37,6 +39,7 @@ public final class Slipstream {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         modBus.addListener(SlipstreamConfig::onLoad);
         modBus.addListener(SlipstreamConfig::onReload);
+        modBus.addListener(this::onCommonSetup);
 
         Path configRoot = FMLPaths.CONFIGDIR.get().resolve(SERIES_CONFIG_DIR).resolve(MOD_ID);
         try {
@@ -55,6 +58,20 @@ public final class Slipstream {
                         (remoteVersion, isFromServer) -> true));
 
         MinecraftForge.EVENT_BUS.register(this);
+    }
+
+    // Register the P2 capability channel only when zstd is enabled. Done here (not in the constructor) because
+    // the config is loaded before common setup; gating the registration on config is what keeps zstd opt-in and,
+    // since each end only registers when its own config enables it, makes the per-connection swap decision
+    // symmetric (isRemotePresent is true on an end iff both ends enabled it).
+    private void onCommonSetup(FMLCommonSetupEvent event) {
+        if (SlipstreamConfig.zstdEnabled()) {
+            event.enqueueWork(SlipstreamNetwork::register);
+            LOGGER.info("[Slipstream] zstd wire codec enabled (level {}); capability channel registered",
+                    SlipstreamConfig.zstdLevel());
+        } else {
+            LOGGER.info("[Slipstream] zstd wire codec disabled (telemetry / serialize-once only)");
+        }
     }
 
     @SubscribeEvent

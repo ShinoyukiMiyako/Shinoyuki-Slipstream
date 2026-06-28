@@ -17,6 +17,8 @@ public final class SlipstreamConfig {
     private static volatile boolean trackChunkDedup;
     private static volatile int autoReportSeconds;
     private static volatile boolean chunkSerializeOnce;
+    private static volatile boolean zstdEnabled;
+    private static volatile int zstdLevel;
 
     public static boolean telemetryEnabled() {
         return telemetryEnabled;
@@ -38,16 +40,24 @@ public final class SlipstreamConfig {
         return chunkSerializeOnce;
     }
 
+    public static boolean zstdEnabled() {
+        return zstdEnabled;
+    }
+
+    public static int zstdLevel() {
+        return zstdLevel;
+    }
+
     public static void onLoad(ModConfigEvent.Loading event) {
         refresh();
-        LOGGER.info("[Slipstream] config loaded enabled={} perPlayer={} chunkDedup={} serializeOnce={}",
-                telemetryEnabled, trackPerPlayer, trackChunkDedup, chunkSerializeOnce);
+        LOGGER.info("[Slipstream] config loaded enabled={} perPlayer={} chunkDedup={} serializeOnce={} zstd={}/{}",
+                telemetryEnabled, trackPerPlayer, trackChunkDedup, chunkSerializeOnce, zstdEnabled, zstdLevel);
     }
 
     public static void onReload(ModConfigEvent.Reloading event) {
         refresh();
-        LOGGER.info("[Slipstream] config reloaded enabled={} perPlayer={} chunkDedup={} serializeOnce={}",
-                telemetryEnabled, trackPerPlayer, trackChunkDedup, chunkSerializeOnce);
+        LOGGER.info("[Slipstream] config reloaded enabled={} perPlayer={} chunkDedup={} serializeOnce={} zstd={}/{}",
+                telemetryEnabled, trackPerPlayer, trackChunkDedup, chunkSerializeOnce, zstdEnabled, zstdLevel);
     }
 
     private static void refresh() {
@@ -56,6 +66,8 @@ public final class SlipstreamConfig {
         trackChunkDedup = ConfigSpec.TRACK_CHUNK_DEDUP.get();
         autoReportSeconds = ConfigSpec.AUTO_REPORT_SECONDS.get();
         chunkSerializeOnce = ConfigSpec.CHUNK_SERIALIZE_ONCE.get();
+        zstdEnabled = ConfigSpec.ZSTD_ENABLED.get();
+        zstdLevel = ConfigSpec.ZSTD_LEVEL.get();
     }
 
     private SlipstreamConfig() {

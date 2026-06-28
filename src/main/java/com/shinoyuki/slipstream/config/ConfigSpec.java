@@ -11,6 +11,8 @@ public final class ConfigSpec {
     public static final ForgeConfigSpec.BooleanValue TRACK_CHUNK_DEDUP;
     public static final ForgeConfigSpec.IntValue AUTO_REPORT_SECONDS;
     public static final ForgeConfigSpec.BooleanValue CHUNK_SERIALIZE_ONCE;
+    public static final ForgeConfigSpec.BooleanValue ZSTD_ENABLED;
+    public static final ForgeConfigSpec.IntValue ZSTD_LEVEL;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -47,6 +49,20 @@ public final class ConfigSpec {
                          "Zero invalidation -- the cache is the packet instance itself (one chunk snapshot).",
                          "Any packet not cached falls back to vanilla per-connection compression.")
                 .define("chunkSerializeOnce", false);
+
+        ZSTD_ENABLED = b
+                .comment("zstd wire compression (P2). Negotiated per-connection: it engages only when BOTH ends run",
+                         "Slipstream with this enabled (capability is exchanged during the Forge login handshake).",
+                         "Every other connection -- vanilla client, vanilla server, or this disabled on either side --",
+                         "stays on byte-for-byte vanilla zlib, so there is no compatibility cost. Cuts chunk-packet",
+                         "bytes on the wire roughly 15-35%. Toggling requires a restart: the capability channel is",
+                         "registered once at startup, and that registration is what makes the codec eligible.")
+                .define("zstdEnabled", false);
+
+        ZSTD_LEVEL = b
+                .comment("zstd compression level on the network hot path. 1-3 trade ratio for CPU; 3 is the default.",
+                         "Higher levels cost more netty-thread CPU per packet for diminishing size gains.")
+                .defineInRange("zstdLevel", 3, 1, 9);
 
         b.pop();
         SPEC = b.build();

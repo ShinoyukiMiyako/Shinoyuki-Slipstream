@@ -1,5 +1,6 @@
 package com.shinoyuki.slipstream.mixin;
 
+import com.shinoyuki.slipstream.compress.WireCodec;
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import com.shinoyuki.slipstream.telemetry.ChunkEncodeProbe;
 import com.shinoyuki.slipstream.telemetry.ConnectionStats;
@@ -34,8 +35,10 @@ public abstract class CompressionEncoderMixin {
             ChunkEncodeProbe probe = stats.pendingChunk();
             if (probe != null) {
                 CompletableFuture<byte[]> future = probe.slipstream$getOrCreateFrameFuture();
-                if (!future.isDone()) {
-                    future.complete(ByteBufUtil.getBytes(out));
+                // complete() returns true only for the thread that actually populates the frame -- the
+                // originating recipient -- so it alone stamps the codec the cohort-aware flush compares against.
+                if (future.complete(ByteBufUtil.getBytes(out))) {
+                    probe.slipstream$setFrameCodec(WireCodec.ZLIB);
                 }
             }
         }

@@ -1,5 +1,7 @@
 package com.shinoyuki.slipstream.optimize;
 
+import com.shinoyuki.slipstream.compress.ConnectionCodec;
+import com.shinoyuki.slipstream.compress.WireCodec;
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import com.shinoyuki.slipstream.telemetry.ConnectionStats;
 import com.shinoyuki.slipstream.telemetry.PacketTelemetry;
@@ -67,16 +69,20 @@ public final class BroadcastShare {
         return c;
     }
 
-    /** Flush captured packets in order on the recipient's event loop. Per-item try/catch + a normal-send
-     *  last resort guarantee no packet is silently dropped if the pre-compressed write throws. */
+    /** Flush captured packets in order on the recipient's event loop. The shared frame is reused only when this
+     *  recipient's negotiated codec matches the codec that produced the frame; a mismatched recipient (zstd frame
+     *  to a zlib peer, or vice versa) falls back to a normal send so it re-compresses with its own codec.
+     *  Per-item try/catch + a normal-send last resort guarantee no packet is silently dropped. */
     public static void flush(Capture cap, ClientboundLevelChunkWithLightPacket chunkPacket,
-                             @Nullable byte[] frame, int uncompressed, @Nullable Throwable error) {
+                             @Nullable byte[] frame, int uncompressed, @Nullable WireCodec frameCodec,
+                             @Nullable Throwable error) {
         Connection conn = cap.connection;
         Channel channel = conn.channel();
+        boolean codecMatches = frameCodec != null && ConnectionCodec.of(channel) == frameCodec;
         ChannelHandlerContext compressCtx = (channel != null) ? channel.pipeline().context("compress") : null;
         for (Queued q : cap.queued) {
             try {
-                if (q.packet == chunkPacket && frame != null && compressCtx != null) {
+                if (q.packet == chunkPacket && frame != null && compressCtx != null && codecMatches) {
                     sendPreCompressed(channel, compressCtx, chunkPacket, frame, uncompressed);
                 } else {
                     conn.send(q.packet, q.listener);

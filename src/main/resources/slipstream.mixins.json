@@ -8,10 +8,14 @@
     "ChunkMapMixin",
     "ChunkPacketMixin",
     "CompressionEncoderMixin",
+    "ConnectionCompressionMixin",
     "ConnectionMixin",
-    "PacketEncoderMixin"
+    "PacketEncoderMixin",
+    "ServerLoginNegotiationMixin"
   ],
-  "client": [],
+  "client": [
+    "ClientHandshakeNegotiationMixin"
+  ],
   "server": [],
   "injectors": {
     "defaultRequire": 1

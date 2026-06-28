@@ -1,5 +1,6 @@
 package com.shinoyuki.slipstream.mixin;
 
+import com.shinoyuki.slipstream.compress.WireCodec;
 import com.shinoyuki.slipstream.telemetry.ChunkEncodeProbe;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,6 +21,7 @@ public abstract class ChunkPacketMixin implements ChunkEncodeProbe {
     private final AtomicInteger slipstream$encodes = new AtomicInteger();
     private final AtomicReference<CompletableFuture<byte[]>> slipstream$frameFutureRef = new AtomicReference<>();
     private volatile int slipstream$uncompressedSize;
+    private volatile WireCodec slipstream$frameCodec;
 
     @Override
     public int slipstream$markEncode() {
@@ -47,5 +49,15 @@ public abstract class ChunkPacketMixin implements ChunkEncodeProbe {
     @Override
     public int slipstream$uncompressedSize() {
         return this.slipstream$uncompressedSize;
+    }
+
+    @Override
+    public void slipstream$setFrameCodec(WireCodec codec) {
+        this.slipstream$frameCodec = codec;
+    }
+
+    @Override
+    public WireCodec slipstream$frameCodec() {
+        return this.slipstream$frameCodec;
     }
 }

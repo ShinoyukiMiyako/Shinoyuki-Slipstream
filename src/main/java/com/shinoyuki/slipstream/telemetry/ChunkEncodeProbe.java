@@ -1,5 +1,7 @@
 package com.shinoyuki.slipstream.telemetry;
 
+import com.shinoyuki.slipstream.compress.WireCodec;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -21,4 +23,10 @@ public interface ChunkEncodeProbe {
     void slipstream$setUncompressedSize(int size);
 
     int slipstream$uncompressedSize();
+
+    /** Codec of the cached frame, stamped by the recipient that actually completes the future. A deferred
+     *  recipient may reuse the frame only when its own negotiated codec matches this; otherwise it re-compresses. */
+    void slipstream$setFrameCodec(WireCodec codec);
+
+    WireCodec slipstream$frameCodec();
 }
