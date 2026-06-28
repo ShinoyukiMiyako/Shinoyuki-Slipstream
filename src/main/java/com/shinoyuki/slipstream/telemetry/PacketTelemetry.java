@@ -28,7 +28,7 @@ public final class PacketTelemetry {
 
     // chunk 去重: 每个 chunkPos 被序列化的次数 (跨所有连接)。distinct = map.size(), total = chunkTotalSends。
     // redundant = total - distinct = serialize-once 广播能省下的序列化+压缩次数。
-    private final Map<Long, LongAdder> chunkSends = new ConcurrentHashMap<>();
+    private final Map<Long, Set<Long>> chunkFanout = new ConcurrentHashMap<>();
     private final LongAdder chunkTotalSends = new LongAdder();
 
     private volatile long startMillis = System.currentTimeMillis();
@@ -53,9 +53,9 @@ public final class PacketTelemetry {
         connections.remove(stats);
     }
 
-    public void recordChunkSend(int x, int z) {
+    public void recordChunkSend(int x, int z, long connId) {
         chunkTotalSends.increment();
-        chunkSends.computeIfAbsent(packKey(x, z), k -> new LongAdder()).increment();
+        chunkFanout.computeIfAbsent(packKey(x, z), k -> ConcurrentHashMap.newKeySet()).add(connId);
     }
 
     public long chunkTotalSends() {
@@ -63,7 +63,18 @@ public final class PacketTelemetry {
     }
 
     public long chunkDistinct() {
-        return chunkSends.size();
+        return chunkFanout.size();
+    }
+
+    // distinct (chunkPos, player) 对数 = 每个 chunk 的不同接收者之和。
+    // broadcastRedundant = pairs - distinctChunks (同 chunk 发给多个玩家, serialize-once 直接省的)。
+    // temporalRedundant  = totalSends - pairs     (同玩家重访同 chunk, 需短时缓存)。
+    public long chunkDistinctPlayerPairs() {
+        long sum = 0;
+        for (Set<Long> players : chunkFanout.values()) {
+            sum += players.size();
+        }
+        return sum;
     }
 
     public long startMillis() {
@@ -72,12 +83,21 @@ public final class PacketTelemetry {
 
     public void reset() {
         global.clear();
-        chunkSends.clear();
+        chunkFanout.clear();
         chunkTotalSends.reset();
         for (ConnectionStats stats : connections) {
             stats.byType().clear();
         }
         startMillis = System.currentTimeMillis();
+    }
+
+    /** Stable display label; disambiguates inner-class packets (e.g. ClientboundMoveEntityPacket$Pos). */
+    public static String label(Class<?> type) {
+        Class<?> enclosing = type.getEnclosingClass();
+        if (enclosing != null) {
+            return enclosing.getSimpleName() + "$" + type.getSimpleName();
+        }
+        return type.getSimpleName();
     }
 
     private static long packKey(int x, int z) {

@@ -54,13 +54,23 @@ public final class TelemetryReport {
 
         long chunkSends = t.chunkTotalSends();
         long distinct = t.chunkDistinct();
+        long pairs = t.chunkDistinctPlayerPairs();
         if (chunkSends > 0) {
-            long redundant = chunkSends - distinct;
-            double pct = 100.0 * redundant / chunkSends;
+            long broadcastRedundant = pairs - distinct;
+            long temporalRedundant = chunkSends - pairs;
+            long totalRedundant = chunkSends - distinct;
             line(sb, "");
             line(sb, String.format(Locale.ROOT,
-                    "chunk broadcast: %d sends over %d distinct chunks -> %d redundant (%.1f%% of chunk serialize+compress is dedupable by serialize-once)",
-                    chunkSends, distinct, redundant, pct));
+                    "chunk: %d sends, %d distinct chunks, %d (chunk,player) pairs",
+                    chunkSends, distinct, pairs));
+            line(sb, String.format(Locale.ROOT,
+                    "  broadcast redundant (serialize-once-broadcast saves this CPU): %d = %.1f%% of sends",
+                    broadcastRedundant, 100.0 * broadcastRedundant / chunkSends));
+            line(sb, String.format(Locale.ROOT,
+                    "  temporal  redundant (same player revisits; needs short-lived cache): %d = %.1f%% of sends",
+                    temporalRedundant, 100.0 * temporalRedundant / chunkSends));
+            line(sb, String.format(Locale.ROOT,
+                    "  combined dedupable: %.1f%%", 100.0 * totalRedundant / chunkSends));
         }
 
         List<ConnectionStats> conns = new ArrayList<>(t.connections());

@@ -4,6 +4,7 @@ import net.minecraft.network.Connection;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Per-connection accumulator. Writes happen on a single netty event-loop thread (netty guarantees all
@@ -13,6 +14,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ConnectionStats {
 
+    private static final AtomicLong NEXT_ID = new AtomicLong();
+
+    private final long id = NEXT_ID.getAndIncrement();
     private final Connection connection;
     private final Map<String, TypeStat> byType = new ConcurrentHashMap<>();
 
@@ -24,6 +28,10 @@ public final class ConnectionStats {
 
     public ConnectionStats(Connection connection) {
         this.connection = connection;
+    }
+
+    public long id() {
+        return id;
     }
 
     public Connection connection() {

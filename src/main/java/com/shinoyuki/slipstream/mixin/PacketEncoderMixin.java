@@ -30,19 +30,20 @@ public abstract class PacketEncoderMixin {
             return;
         }
         int uncompressed = out.readableBytes();
-        String label = packet.getClass().getSimpleName();
+        String label = PacketTelemetry.label(packet.getClass());
         PacketTelemetry telemetry = PacketTelemetry.get();
         telemetry.global(label).addUncompressed(uncompressed);
-
-        if (SlipstreamConfig.trackChunkDedup() && packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
-            telemetry.recordChunkSend(chunkPacket.getX(), chunkPacket.getZ());
-        }
 
         ConnectionStats stats = stats(ctx, telemetry);
         // pending 始终设置 (全局压缩后字节的归属也依赖它); 每连接明细仅在开启 perPlayer 时累加。
         stats.setPending(label, uncompressed);
         if (SlipstreamConfig.trackPerPlayer()) {
             stats.type(label).addUncompressed(uncompressed);
+        }
+
+        // chunk 发送带上连接 id, 供 broadcast(跨玩家) vs temporal(同玩家重访) 冗余拆分。
+        if (SlipstreamConfig.trackChunkDedup() && packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
+            telemetry.recordChunkSend(chunkPacket.getX(), chunkPacket.getZ(), stats.id());
         }
     }
 
