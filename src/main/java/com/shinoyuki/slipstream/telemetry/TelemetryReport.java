@@ -126,6 +126,44 @@ public final class TelemetryReport {
         }
     }
 
+    /** 机器可读的每类包聚合 (count/wire/raw + chunk 去重计数), 供离线分析/趋势追踪。 */
+    public static String renderJson(PacketTelemetry t) {
+        double elapsedSec = Math.max(0.001, (System.currentTimeMillis() - t.startMillis()) / 1000.0);
+        List<Map.Entry<String, TypeStat>> types = new ArrayList<>(t.globalView().entrySet());
+        types.sort(Comparator.comparingLong((Map.Entry<String, TypeStat> e) -> e.getValue().compressedBytes()).reversed());
+        StringBuilder sb = new StringBuilder(1024);
+        sb.append("{\"window_s\":").append(String.format(Locale.ROOT, "%.1f", elapsedSec))
+                .append(",\"connections\":").append(t.connections().size())
+                .append(",\"chunk_sends\":").append(t.chunkTotalSends())
+                .append(",\"chunk_distinct\":").append(t.chunkDistinct())
+                .append(",\"packets\":[");
+        boolean first = true;
+        for (Map.Entry<String, TypeStat> e : types) {
+            TypeStat s = e.getValue();
+            if (!first) {
+                sb.append(',');
+            }
+            first = false;
+            sb.append("{\"type\":\"").append(e.getKey()).append("\",\"count\":").append(s.count())
+                    .append(",\"wire\":").append(s.compressedBytes())
+                    .append(",\"raw\":").append(s.uncompressedBytes()).append('}');
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    public static Path writeJsonToFile(PacketTelemetry t) {
+        try {
+            Path dir = FMLPaths.GAMEDIR.get().resolve("logs").resolve("slipstream");
+            Files.createDirectories(dir);
+            Path file = dir.resolve("telemetry-" + System.currentTimeMillis() + ".json");
+            Files.write(file, renderJson(t).getBytes(StandardCharsets.UTF_8));
+            return file;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     private static void line(StringBuilder sb, String s) {
         sb.append(s).append('\n');
     }

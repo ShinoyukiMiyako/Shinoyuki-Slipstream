@@ -4,6 +4,7 @@ import com.github.luben.zstd.ZstdCompressCtx;
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import com.shinoyuki.slipstream.telemetry.ChunkEncodeProbe;
 import com.shinoyuki.slipstream.telemetry.ConnectionStats;
+import com.shinoyuki.slipstream.telemetry.PacketCapture;
 import com.shinoyuki.slipstream.telemetry.PacketTelemetry;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -39,6 +40,10 @@ public final class ZstdEncoder extends MessageToByteEncoder<ByteBuf> {
         out.writeBytes(frame);
 
         ConnectionStats stats = ctx.channel().attr(PacketTelemetry.STATS_KEY).get();
+        if (PacketCapture.active()) {
+            // 出站抓包: pendingType 由 PacketEncoderMixin 同线程刚设上; payload 即压缩前原始字节 (仿真燃料)。
+            PacketCapture.record('O', stats != null ? stats.pendingType() : null, payload.length, frame.length, payload);
+        }
         if (stats == null) {
             return;
         }
