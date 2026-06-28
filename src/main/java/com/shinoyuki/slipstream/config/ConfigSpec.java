@@ -15,6 +15,8 @@ public final class ConfigSpec {
     public static final ForgeConfigSpec.IntValue ZSTD_LEVEL;
     public static final ForgeConfigSpec.IntValue ZSTD_MAX_UNCOMPRESSED_MIB;
     public static final ForgeConfigSpec.BooleanValue LARGE_PACKET_ENABLED;
+    public static final ForgeConfigSpec.BooleanValue AGGREGATE_ENABLED;
+    public static final ForgeConfigSpec.IntValue AGGREGATE_WINDOW_MS;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -83,6 +85,21 @@ public final class ConfigSpec {
                          "unaffected; large packets need Slipstream on both ends (same requirement those mods imposed),",
                          "and here they are also zstd-compressed. Off = exact vanilla limits.")
                 .define("largePacketEnabled", true);
+
+        AGGREGATE_ENABLED = b
+                .comment("Small-packet aggregation (P1, combat regime). Coalesce the burst of tiny entity-state packets",
+                         "(motion / move / head-rotate) into one framed batch per window before compression: this kills",
+                         "the per-packet framing overhead and hands zstd a compressible batch instead of sub-threshold",
+                         "packets it cannot touch individually. Dual-end: engages only between two Slipstream ends that",
+                         "both enabled it; every other peer keeps vanilla per-packet framing. Off until the aggregation",
+                         "pipeline ships -- this flag and the negotiated capability gate it.")
+                .define("aggregateEnabled", false);
+
+        AGGREGATE_WINDOW_MS = b
+                .comment("Aggregation flush window in milliseconds (one server tick = 50ms). Larger = better compression",
+                         "but more added latency; 20ms (sub-tick) is near-imperceptible. Critical packets (keep-alive)",
+                         "bypass the window and flush immediately.")
+                .defineInRange("aggregateWindowMs", 20, 5, 100);
 
         b.pop();
         SPEC = b.build();

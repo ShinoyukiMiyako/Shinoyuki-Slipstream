@@ -21,6 +21,8 @@ public final class SlipstreamConfig {
     private static volatile int zstdLevel;
     private static volatile int zstdMaxUncompressedBytes;
     private static volatile boolean largePacketEnabled;
+    private static volatile boolean aggregateEnabled;
+    private static volatile int aggregateWindowMs;
 
     public static boolean telemetryEnabled() {
         return telemetryEnabled;
@@ -58,6 +60,14 @@ public final class SlipstreamConfig {
         return largePacketEnabled;
     }
 
+    public static boolean aggregateEnabled() {
+        return aggregateEnabled;
+    }
+
+    public static int aggregateWindowMs() {
+        return aggregateWindowMs;
+    }
+
     public static void onLoad(ModConfigEvent.Loading event) {
         refresh();
         LOGGER.info("[Slipstream] config loaded enabled={} perPlayer={} chunkDedup={} serializeOnce={} zstd={}/{}",
@@ -80,6 +90,8 @@ public final class SlipstreamConfig {
         zstdLevel = ConfigSpec.ZSTD_LEVEL.get();
         zstdMaxUncompressedBytes = ConfigSpec.ZSTD_MAX_UNCOMPRESSED_MIB.get() * 1024 * 1024;
         largePacketEnabled = ConfigSpec.LARGE_PACKET_ENABLED.get();
+        aggregateEnabled = ConfigSpec.AGGREGATE_ENABLED.get();
+        aggregateWindowMs = ConfigSpec.AGGREGATE_WINDOW_MS.get();
     }
 
     private SlipstreamConfig() {
