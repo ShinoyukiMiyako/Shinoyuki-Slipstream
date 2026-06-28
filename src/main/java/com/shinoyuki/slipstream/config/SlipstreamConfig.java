@@ -16,6 +16,7 @@ public final class SlipstreamConfig {
     private static volatile boolean trackPerPlayer;
     private static volatile boolean trackChunkDedup;
     private static volatile int autoReportSeconds;
+    private static volatile boolean chunkSerializeOnce;
 
     public static boolean telemetryEnabled() {
         return telemetryEnabled;
@@ -33,16 +34,20 @@ public final class SlipstreamConfig {
         return autoReportSeconds;
     }
 
+    public static boolean chunkSerializeOnce() {
+        return chunkSerializeOnce;
+    }
+
     public static void onLoad(ModConfigEvent.Loading event) {
         refresh();
-        LOGGER.info("[Slipstream] config loaded enabled={} perPlayer={} chunkDedup={}",
-                telemetryEnabled, trackPerPlayer, trackChunkDedup);
+        LOGGER.info("[Slipstream] config loaded enabled={} perPlayer={} chunkDedup={} serializeOnce={}",
+                telemetryEnabled, trackPerPlayer, trackChunkDedup, chunkSerializeOnce);
     }
 
     public static void onReload(ModConfigEvent.Reloading event) {
         refresh();
-        LOGGER.info("[Slipstream] config reloaded enabled={} perPlayer={} chunkDedup={}",
-                telemetryEnabled, trackPerPlayer, trackChunkDedup);
+        LOGGER.info("[Slipstream] config reloaded enabled={} perPlayer={} chunkDedup={} serializeOnce={}",
+                telemetryEnabled, trackPerPlayer, trackChunkDedup, chunkSerializeOnce);
     }
 
     private static void refresh() {
@@ -50,6 +55,7 @@ public final class SlipstreamConfig {
         trackPerPlayer = ConfigSpec.TRACK_PER_PLAYER.get();
         trackChunkDedup = ConfigSpec.TRACK_CHUNK_DEDUP.get();
         autoReportSeconds = ConfigSpec.AUTO_REPORT_SECONDS.get();
+        chunkSerializeOnce = ConfigSpec.CHUNK_SERIALIZE_ONCE.get();
     }
 
     private SlipstreamConfig() {

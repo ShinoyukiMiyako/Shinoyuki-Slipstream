@@ -12,4 +12,10 @@ package com.shinoyuki.slipstream.telemetry;
  */
 public interface ChunkEncodeProbe {
     int slipstream$markEncode();
+
+    /** The compressed frame from the first encode of this instance, or null until populated. */
+    byte[] slipstream$compressedFrame();
+
+    /** Cache the compressed frame so other recipients of this same instance can reuse it. Set-once. */
+    void slipstream$cacheCompressedFrame(byte[] frame);
 }

@@ -31,6 +31,7 @@ public final class PacketTelemetry {
     private final Map<Long, Set<Long>> chunkFanout = new ConcurrentHashMap<>();
     private final LongAdder chunkTotalSends = new LongAdder();
     private final LongAdder chunkInstances = new LongAdder();
+    private final LongAdder chunkCompressSkipped = new LongAdder();
 
     private volatile long startMillis = System.currentTimeMillis();
 
@@ -88,6 +89,15 @@ public final class PacketTelemetry {
         return chunkInstances.sum();
     }
 
+    // serialize-once 实际生效计数: 命中实例缓存、跳过 Deflater 的 chunk 发送次数。
+    public void recordChunkCompressSkipped() {
+        chunkCompressSkipped.increment();
+    }
+
+    public long chunkCompressSkipped() {
+        return chunkCompressSkipped.sum();
+    }
+
     public long startMillis() {
         return startMillis;
     }
@@ -97,6 +107,7 @@ public final class PacketTelemetry {
         chunkFanout.clear();
         chunkTotalSends.reset();
         chunkInstances.reset();
+        chunkCompressSkipped.reset();
         for (ConnectionStats stats : connections) {
             stats.byType().clear();
         }

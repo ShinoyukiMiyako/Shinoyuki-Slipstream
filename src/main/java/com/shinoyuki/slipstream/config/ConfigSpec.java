@@ -10,6 +10,7 @@ public final class ConfigSpec {
     public static final ForgeConfigSpec.BooleanValue TRACK_PER_PLAYER;
     public static final ForgeConfigSpec.BooleanValue TRACK_CHUNK_DEDUP;
     public static final ForgeConfigSpec.IntValue AUTO_REPORT_SECONDS;
+    public static final ForgeConfigSpec.BooleanValue CHUNK_SERIALIZE_ONCE;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -34,6 +35,18 @@ public final class ConfigSpec {
         AUTO_REPORT_SECONDS = b
                 .comment("Auto-write a telemetry snapshot to logs/slipstream every N seconds. 0 disables (manual /slipstream report only).")
                 .defineInRange("autoReportSeconds", 0, 0, 3600);
+
+        b.pop();
+
+        b.comment("Optimization (experimental). Disabled by default: the mod ships as pure telemetry until enabled.")
+         .push("optimize");
+
+        CHUNK_SERIALIZE_ONCE = b
+                .comment("Serialize-once: compress each chunk packet once per synchronous broadcast pass and reuse",
+                         "the compressed frame for the other recipients, skipping the redundant Deflater work.",
+                         "Zero invalidation -- the cache is the packet instance itself (one chunk snapshot).",
+                         "Any packet not cached falls back to vanilla per-connection compression.")
+                .define("chunkSerializeOnce", false);
 
         b.pop();
         SPEC = b.build();

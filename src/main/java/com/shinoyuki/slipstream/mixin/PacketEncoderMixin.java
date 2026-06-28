@@ -42,11 +42,17 @@ public abstract class PacketEncoderMixin {
             stats.type(label).addUncompressed(uncompressed);
         }
 
-        // chunk 发送带上连接 id + 该实例是否首次编码, 供拆分:
-        // 同步广播 pass (同实例多连接, P0-safe serialize-once 可省) vs 移动路径/跨实例 (需版本缓存)。
-        if (SlipstreamConfig.trackChunkDedup() && packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
-            int encodeOrdinal = ((ChunkEncodeProbe) chunkPacket).slipstream$markEncode();
-            telemetry.recordChunkSend(chunkPacket.getX(), chunkPacket.getZ(), stats.id(), encodeOrdinal == 1);
+        // chunk 包: 把实例引用交给压缩阶段 (serialize-once 复用判定), 并按需记录拆分遥测。
+        // pendingChunk 始终随包设置/清除, 不依赖 trackChunkDedup, 否则优化会随遥测开关失灵。
+        if (packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
+            ChunkEncodeProbe probe = (ChunkEncodeProbe) chunkPacket;
+            stats.setPendingChunk(probe);
+            if (SlipstreamConfig.trackChunkDedup()) {
+                telemetry.recordChunkSend(chunkPacket.getX(), chunkPacket.getZ(), stats.id(),
+                        probe.slipstream$markEncode() == 1);
+            }
+        } else {
+            stats.setPendingChunk(null);
         }
     }
 

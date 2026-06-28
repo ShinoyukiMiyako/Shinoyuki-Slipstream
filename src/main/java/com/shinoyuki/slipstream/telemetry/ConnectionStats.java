@@ -25,6 +25,7 @@ public final class ConnectionStats {
     // compressed size. Single-slot is safe because each write flows fully through the pipeline before the next.
     private String pendingType;
     private int pendingUncompressed;
+    private ChunkEncodeProbe pendingChunk;
 
     public ConnectionStats(Connection connection) {
         this.connection = connection;
@@ -59,7 +60,16 @@ public final class ConnectionStats {
         return pendingUncompressed;
     }
 
+    public void setPendingChunk(ChunkEncodeProbe chunk) {
+        this.pendingChunk = chunk;
+    }
+
+    public ChunkEncodeProbe pendingChunk() {
+        return pendingChunk;
+    }
+
     public void clearPending() {
         this.pendingType = null;
+        this.pendingChunk = null;
     }
 }

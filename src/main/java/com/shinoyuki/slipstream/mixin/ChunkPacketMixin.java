@@ -17,9 +17,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class ChunkPacketMixin implements ChunkEncodeProbe {
 
     private final AtomicInteger slipstream$encodes = new AtomicInteger();
+    private volatile byte[] slipstream$compressedFrame;
 
     @Override
     public int slipstream$markEncode() {
         return this.slipstream$encodes.incrementAndGet();
+    }
+
+    @Override
+    public byte[] slipstream$compressedFrame() {
+        return this.slipstream$compressedFrame;
+    }
+
+    @Override
+    public void slipstream$cacheCompressedFrame(byte[] frame) {
+        // Set-once. Concurrent broadcast encodes may race here, but they produce byte-identical frames,
+        // so a lost update is harmless — every reader still gets a correct frame for this chunk snapshot.
+        if (this.slipstream$compressedFrame == null) {
+            this.slipstream$compressedFrame = frame;
+        }
     }
 }

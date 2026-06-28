@@ -76,6 +76,12 @@ public final class TelemetryReport {
                     "  (by player: broadcast %.1f%% / temporal %.1f%% ; combined dedupable %.1f%%)",
                     100.0 * broadcastRedundant / chunkSends, 100.0 * temporalRedundant / chunkSends,
                     100.0 * totalRedundant / chunkSends));
+            long skipped = t.chunkCompressSkipped();
+            if (skipped > 0) {
+                line(sb, String.format(Locale.ROOT,
+                        "  serialize-once ACTIVE: %d chunk compressions skipped (%.1f%% of sends)",
+                        skipped, 100.0 * skipped / chunkSends));
+            }
         }
 
         List<ConnectionStats> conns = new ArrayList<>(t.connections());
