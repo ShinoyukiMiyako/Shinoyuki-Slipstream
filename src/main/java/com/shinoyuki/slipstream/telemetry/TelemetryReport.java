@@ -20,6 +20,14 @@ public final class TelemetryReport {
 
     private static final int MAX_PLAYER_ROWS = 30;
 
+    /**
+     * 在 classloader 健康期 (onServerStarting) 触发本类加载, 让关服时的快照写入走已加载缓存。
+     * 关服钩子里首次加载本类会撞 Forge 模块 classloader 的 teardown, 抛 NoClassDefFoundError 打断
+     * 整条 ServerStoppingEvent 分发链 (后续 mod 的关服钩子全被跳过)。空方法体, 仅为强制类加载。
+     */
+    public static void preload() {
+    }
+
     public static String render(PacketTelemetry t) {
         StringBuilder sb = new StringBuilder();
         double elapsedSec = Math.max(0.001, (System.currentTimeMillis() - t.startMillis()) / 1000.0);

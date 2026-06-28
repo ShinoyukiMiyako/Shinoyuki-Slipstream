@@ -85,6 +85,9 @@ public final class Slipstream {
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
+        // 趁 classloader 健康先加载关服快照写入类, 否则关服钩子里首次加载会撞模块 classloader teardown
+        // 抛 NoClassDefFoundError, 打断整条 ServerStoppingEvent 分发, 把后续 mod 的关服收尾全跳过。
+        TelemetryReport.preload();
         LOGGER.info("[Slipstream] telemetry {} (perPlayer={}, chunkDedup={})",
                 SlipstreamConfig.telemetryEnabled() ? "armed" : "disabled",
                 SlipstreamConfig.trackPerPlayer(), SlipstreamConfig.trackChunkDedup());
@@ -97,10 +100,16 @@ public final class Slipstream {
 
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
-        // 收尾落一份快照, 便于关服后回看本次会话的出站画像。
-        Path file = TelemetryReport.writeToFile(PacketTelemetry.get());
-        if (file != null) {
-            LOGGER.info("[Slipstream] final telemetry snapshot written to {}", file);
+        // 收尾落一份快照, 便于关服后回看本次会话的出站画像。这是关服事件链上的一环且快照纯属可选,
+        // 任何失败 (含类加载异常) 都必须就地吞掉: 否则异常冒泡会打断 ServerStoppingEvent 分发, 让后续
+        // mod 的关服收尾被跳过 (BAS 等的 worker 不被 drain -> 服务器关不掉)。最外层钩子, 兜底捕获。
+        try {
+            Path file = TelemetryReport.writeToFile(PacketTelemetry.get());
+            if (file != null) {
+                LOGGER.info("[Slipstream] final telemetry snapshot written to {}", file);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[Slipstream] 关服遥测快照写入失败, 跳过 (不影响关服)", t);
         }
     }
 }
