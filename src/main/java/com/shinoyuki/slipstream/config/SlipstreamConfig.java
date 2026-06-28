@@ -20,6 +20,7 @@ public final class SlipstreamConfig {
     private static volatile boolean zstdEnabled;
     private static volatile int zstdLevel;
     private static volatile int zstdMaxUncompressedBytes;
+    private static volatile boolean largePacketEnabled;
 
     public static boolean telemetryEnabled() {
         return telemetryEnabled;
@@ -53,6 +54,10 @@ public final class SlipstreamConfig {
         return zstdMaxUncompressedBytes;
     }
 
+    public static boolean largePacketEnabled() {
+        return largePacketEnabled;
+    }
+
     public static void onLoad(ModConfigEvent.Loading event) {
         refresh();
         LOGGER.info("[Slipstream] config loaded enabled={} perPlayer={} chunkDedup={} serializeOnce={} zstd={}/{}",
@@ -74,6 +79,7 @@ public final class SlipstreamConfig {
         zstdEnabled = ConfigSpec.ZSTD_ENABLED.get();
         zstdLevel = ConfigSpec.ZSTD_LEVEL.get();
         zstdMaxUncompressedBytes = ConfigSpec.ZSTD_MAX_UNCOMPRESSED_MIB.get() * 1024 * 1024;
+        largePacketEnabled = ConfigSpec.LARGE_PACKET_ENABLED.get();
     }
 
     private SlipstreamConfig() {

@@ -14,6 +14,7 @@ public final class ConfigSpec {
     public static final ForgeConfigSpec.BooleanValue ZSTD_ENABLED;
     public static final ForgeConfigSpec.IntValue ZSTD_LEVEL;
     public static final ForgeConfigSpec.IntValue ZSTD_MAX_UNCOMPRESSED_MIB;
+    public static final ForgeConfigSpec.BooleanValue LARGE_PACKET_ENABLED;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -72,6 +73,15 @@ public final class ConfigSpec {
                          "framing, so this only caps the allocation a malicious modded client could force. Raise it",
                          "if a large-packet mod (XLPackets / PacketFixer) legitimately sends bigger inbound packets.")
                 .defineInRange("zstdMaxUncompressedMiB", 256, 8, 1024);
+
+        LARGE_PACKET_ENABLED = b
+                .comment("Large-packet support: raise the vanilla packet-size ceilings so big packets (MTR map data,",
+                         "vehicle/structure NBT, schematic pastes) do not crash or get rejected -- a clean built-in",
+                         "replacement for XLPackets / PacketFixer (remove those when this is on). Always-on, independent",
+                         "of zstd: normal small packets are byte-identical to vanilla, so non-Slipstream clients are",
+                         "unaffected; large packets need Slipstream on both ends (same requirement those mods imposed),",
+                         "and here they are also zstd-compressed. Off = exact vanilla limits.")
+                .define("largePacketEnabled", true);
 
         b.pop();
         SPEC = b.build();

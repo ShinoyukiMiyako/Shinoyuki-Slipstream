@@ -11,7 +11,22 @@
     "ConnectionCompressionMixin",
     "ConnectionMixin",
     "PacketEncoderMixin",
-    "ServerLoginNegotiationMixin"
+    "ServerLoginNegotiationMixin",
+    "largepacket.ChunkPacketDataLimitMixin",
+    "largepacket.ClientboundCustomPayloadPacketLimitMixin",
+    "largepacket.ClientboundCustomQueryPacketLimitMixin",
+    "largepacket.CompressionDecoderLimitMixin",
+    "largepacket.CompressionEncoderLimitMixin",
+    "largepacket.ConnectionReadTimeoutMixin",
+    "largepacket.FriendlyByteBufLimitMixin",
+    "largepacket.NbtAccounterLimitMixin",
+    "largepacket.PacketEncoderLimitMixin",
+    "largepacket.ServerGameKeepAliveMixin",
+    "largepacket.ServerLoginTimeoutMixin",
+    "largepacket.ServerboundCustomPayloadPacketLimitMixin",
+    "largepacket.ServerboundCustomQueryPacketLimitMixin",
+    "largepacket.Varint21FrameDecoderLimitMixin",
+    "largepacket.Varint21LengthFieldPrependerLimitMixin"
   ],
   "client": [
     "ClientHandshakeNegotiationMixin"

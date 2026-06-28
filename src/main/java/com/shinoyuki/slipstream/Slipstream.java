@@ -72,6 +72,15 @@ public final class Slipstream {
         } else {
             LOGGER.info("[Slipstream] zstd wire codec disabled (telemetry / serialize-once only)");
         }
+
+        if (SlipstreamConfig.largePacketEnabled()) {
+            // Set before CompressionEncoder / the connection pipeline class-load (first login, after setup):
+            // silence Forge's per-oversized-packet debug spam, and raise the server read timeout for slow
+            // large transfers. The actual size ceilings are raised by the large-packet mixins.
+            System.setProperty("forge.disablePacketCompressionDebug", "true");
+            System.setProperty("forge.readTimeout", "120");
+            LOGGER.info("[Slipstream] large-packet support enabled (replaces XLPackets / PacketFixer)");
+        }
     }
 
     @SubscribeEvent
