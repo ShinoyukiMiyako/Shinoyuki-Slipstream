@@ -1,5 +1,7 @@
 package com.shinoyuki.slipstream.aggregate;
 
+import io.netty.buffer.ByteBuf;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -87,6 +89,35 @@ public final class AggregateFrameCodec {
             }
         }
         cursor[0] = pos;
+        return value;
+    }
+
+    /** ByteBuf VarInt (handler 热路径用; 与上面 byte[] 版同语义)。 */
+    public static void writeVarInt(ByteBuf buf, int value) {
+        while ((value & ~0x7F) != 0) {
+            buf.writeByte((value & 0x7F) | 0x80);
+            value >>>= 7;
+        }
+        buf.writeByte(value);
+    }
+
+    public static int readVarInt(ByteBuf buf) {
+        int value = 0;
+        int shift = 0;
+        while (true) {
+            if (!buf.isReadable()) {
+                throw new IllegalArgumentException("truncated VarInt in aggregate batch");
+            }
+            byte b = buf.readByte();
+            value |= (b & 0x7F) << shift;
+            if ((b & 0x80) == 0) {
+                break;
+            }
+            shift += 7;
+            if (shift >= 35) {
+                throw new IllegalArgumentException("VarInt too long in aggregate batch");
+            }
+        }
         return value;
     }
 
