@@ -65,9 +65,12 @@ dependencies {
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 
     // P2: zstd 线缆压缩。zstd-jni 自带各平台 native (BSD, AGPL 兼容), 经 getResourceAsStream
-    // 自解压加载, 不走 java.library.path, 故 jarJar 嵌入即可被 Forge 模块层 classloader 找到。
-    // implementation 提供编译期符号与 dev run 运行期; jarJar 把它打进发布 fat jar (-all.jar)。
-    implementation 'com.github.luben:zstd-jni:1.5.7-11'
+    // 自解压加载, 不走 java.library.path。
+    // minecraftLibrary (非 implementation): dev run 里普通 implementation 库被 FG 放上 module path,
+    // 成独立自动模块, mod 的 GAME 层模块跨层读不到 -> ZstdEncoder 首次调用 NoClassDefFoundError。
+    // minecraftLibrary 让 Forge 把它当 MC 库加载进 mod 可访问的层, 同时提供编译期符号。
+    // jarJar 负责把它打进发布 fat jar (-all.jar), 生产服由 Forge 的 jar-in-jar 装进 GAME 层。
+    minecraftLibrary 'com.github.luben:zstd-jni:1.5.7-11'
     jarJar(group: 'com.github.luben', name: 'zstd-jni', version: '[1.5.7-11,1.6)')
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
