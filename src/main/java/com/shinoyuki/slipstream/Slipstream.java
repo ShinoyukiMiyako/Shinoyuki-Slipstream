@@ -1,14 +1,17 @@
 package com.shinoyuki.slipstream;
 
 import com.mojang.logging.LogUtils;
+import com.shinoyuki.slipstream.aggregate.AggregateNetwork;
 import com.shinoyuki.slipstream.command.SlipstreamCommand;
 import com.shinoyuki.slipstream.compress.SlipstreamNetwork;
 import com.shinoyuki.slipstream.config.ConfigSpec;
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import com.shinoyuki.slipstream.telemetry.PacketTelemetry;
 import com.shinoyuki.slipstream.telemetry.TelemetryReport;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -81,6 +84,12 @@ public final class Slipstream {
             System.setProperty("forge.readTimeout", "120");
             LOGGER.info("[Slipstream] large-packet support enabled (replaces XLPackets / PacketFixer)");
         }
+
+        if (SlipstreamConfig.aggregateEnabled()) {
+            event.enqueueWork(AggregateNetwork::register);
+            LOGGER.info("[Slipstream] small-packet aggregation enabled (window {}ms); capability channel registered",
+                    SlipstreamConfig.aggregateWindowMs());
+        }
     }
 
     @SubscribeEvent
@@ -96,6 +105,14 @@ public final class Slipstream {
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         SlipstreamCommand.register(event.getDispatcher());
+    }
+
+    @SubscribeEvent
+    public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        // 玩家进 PLAY 后发起聚合握手 (对端也开了聚合才生效)。此时 FML 握手已完成, isRemotePresent 可靠。
+        if (event.getEntity() instanceof ServerPlayer player) {
+            AggregateNetwork.offerTo(player);
+        }
     }
 
     @SubscribeEvent
