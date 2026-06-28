@@ -4,20 +4,24 @@ import com.shinoyuki.slipstream.telemetry.ChunkEncodeProbe;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import org.spongepowered.asm.mixin.Mixin;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Adds a per-instance encode counter to the chunk packet so telemetry can separate the synchronous
- * broadcast pass (one packet instance encoded for N connections -> serialize-once-capturable, zero
- * invalidation) from movement-path sends (a fresh instance per player -> needs a versioned cache).
- * Encodes run on per-connection event-loop threads, possibly concurrently for one shared instance,
- * so the counter is atomic.
+ * Per-instance state for telemetry (encode counter) and the serialize-once broadcast share
+ * (originating-send claim + compressed-frame future). The broadcast forEach dispatches sequentially on
+ * the main thread, so the claim is race-free; the future is completed later on the originating
+ * connection's event loop.
  */
 @Mixin(ClientboundLevelChunkWithLightPacket.class)
 public abstract class ChunkPacketMixin implements ChunkEncodeProbe {
 
     private final AtomicInteger slipstream$encodes = new AtomicInteger();
-    private volatile byte[] slipstream$compressedFrame;
+    private final AtomicBoolean slipstream$originatingClaimed = new AtomicBoolean();
+    private volatile CompletableFuture<byte[]> slipstream$frameFuture;
+    private volatile int slipstream$uncompressedSize;
 
     @Override
     public int slipstream$markEncode() {
@@ -25,16 +29,30 @@ public abstract class ChunkPacketMixin implements ChunkEncodeProbe {
     }
 
     @Override
-    public byte[] slipstream$compressedFrame() {
-        return this.slipstream$compressedFrame;
+    public boolean slipstream$claimOriginatingSend() {
+        if (this.slipstream$originatingClaimed.compareAndSet(false, true)) {
+            CompletableFuture<byte[]> future = new CompletableFuture<>();
+            // Bound the wait: if the originating send never compresses (connection dropped mid-pass),
+            // deferred recipients fall back to a normal send instead of hanging forever.
+            future.orTimeout(5, TimeUnit.SECONDS);
+            this.slipstream$frameFuture = future;
+            return true;
+        }
+        return false;
     }
 
     @Override
-    public void slipstream$cacheCompressedFrame(byte[] frame) {
-        // Set-once. Concurrent broadcast encodes may race here, but they produce byte-identical frames,
-        // so a lost update is harmless — every reader still gets a correct frame for this chunk snapshot.
-        if (this.slipstream$compressedFrame == null) {
-            this.slipstream$compressedFrame = frame;
-        }
+    public CompletableFuture<byte[]> slipstream$frameFuture() {
+        return this.slipstream$frameFuture;
+    }
+
+    @Override
+    public void slipstream$setUncompressedSize(int size) {
+        this.slipstream$uncompressedSize = size;
+    }
+
+    @Override
+    public int slipstream$uncompressedSize() {
+        return this.slipstream$uncompressedSize;
     }
 }

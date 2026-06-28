@@ -47,6 +47,8 @@ public abstract class PacketEncoderMixin {
         if (packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
             ChunkEncodeProbe probe = (ChunkEncodeProbe) chunkPacket;
             stats.setPendingChunk(probe);
+            // carried so deferred recipients (which never serialize) can still account uncompressed bytes.
+            probe.slipstream$setUncompressedSize(uncompressed);
             if (SlipstreamConfig.trackChunkDedup()) {
                 telemetry.recordChunkSend(chunkPacket.getX(), chunkPacket.getZ(), stats.id(),
                         probe.slipstream$markEncode() == 1);
