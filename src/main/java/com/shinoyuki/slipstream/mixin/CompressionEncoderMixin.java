@@ -16,14 +16,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Outbound tap #2 plus the originating side of the serialize-once broadcast share.
- *
- * <p>Telemetry: records the compressed (on-wire) size, paired with the packet type stashed by
- * {@link PacketEncoderMixin}.
- *
- * <p>Serialize-once: the originating chunk send compresses here normally; we hand its compressed frame
- * to the packet instance's future so the deferred recipients (see ConnectionMixin) can reuse it without
- * running the Deflater again.
+ * Outbound tap #2 plus the originating side of the serialize-once broadcast share. Telemetry records the
+ * compressed (on-wire) size paired with the packet type stashed by {@link PacketEncoderMixin}. For the
+ * originating chunk send, the compressed frame is handed to the packet instance's future so the deferred
+ * recipients (see ChunkMapMixin / ConnectionMixin) can reuse it instead of running the Deflater again.
  */
 @Mixin(CompressionEncoder.class)
 public abstract class CompressionEncoderMixin {
@@ -37,8 +33,8 @@ public abstract class CompressionEncoderMixin {
         if (SlipstreamConfig.chunkSerializeOnce()) {
             ChunkEncodeProbe probe = stats.pendingChunk();
             if (probe != null) {
-                CompletableFuture<byte[]> future = probe.slipstream$frameFuture();
-                if (future != null && !future.isDone()) {
+                CompletableFuture<byte[]> future = probe.slipstream$getOrCreateFrameFuture();
+                if (!future.isDone()) {
                     future.complete(ByteBufUtil.getBytes(out));
                 }
             }

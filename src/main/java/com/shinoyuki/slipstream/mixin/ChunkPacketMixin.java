@@ -5,22 +5,20 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import org.spongepowered.asm.mixin.Mixin;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Per-instance state for telemetry (encode counter) and the serialize-once broadcast share
- * (originating-send claim + compressed-frame future). The broadcast forEach dispatches sequentially on
- * the main thread, so the claim is race-free; the future is completed later on the originating
- * connection's event loop.
+ * Per-instance state for telemetry (encode counter) and the serialize-once broadcast share (compressed
+ * frame future). The future is created atomically because it is reached from two threads: the originating
+ * connection's event loop (which completes it from CompressionEncoder) and the main thread (which registers
+ * the deferred recipients' flush in ChunkMap.playerLoadedChunk).
  */
 @Mixin(ClientboundLevelChunkWithLightPacket.class)
 public abstract class ChunkPacketMixin implements ChunkEncodeProbe {
 
     private final AtomicInteger slipstream$encodes = new AtomicInteger();
-    private final AtomicBoolean slipstream$originatingClaimed = new AtomicBoolean();
-    private volatile CompletableFuture<byte[]> slipstream$frameFuture;
+    private final AtomicReference<CompletableFuture<byte[]>> slipstream$frameFutureRef = new AtomicReference<>();
     private volatile int slipstream$uncompressedSize;
 
     @Override
@@ -29,21 +27,16 @@ public abstract class ChunkPacketMixin implements ChunkEncodeProbe {
     }
 
     @Override
-    public boolean slipstream$claimOriginatingSend() {
-        if (this.slipstream$originatingClaimed.compareAndSet(false, true)) {
-            CompletableFuture<byte[]> future = new CompletableFuture<>();
-            // Bound the wait: if the originating send never compresses (connection dropped mid-pass),
-            // deferred recipients fall back to a normal send instead of hanging forever.
-            future.orTimeout(5, TimeUnit.SECONDS);
-            this.slipstream$frameFuture = future;
-            return true;
+    public CompletableFuture<byte[]> slipstream$getOrCreateFrameFuture() {
+        CompletableFuture<byte[]> existing = this.slipstream$frameFutureRef.get();
+        if (existing != null) {
+            return existing;
         }
-        return false;
-    }
-
-    @Override
-    public CompletableFuture<byte[]> slipstream$frameFuture() {
-        return this.slipstream$frameFuture;
+        CompletableFuture<byte[]> created = new CompletableFuture<>();
+        if (this.slipstream$frameFutureRef.compareAndSet(null, created)) {
+            return created;
+        }
+        return this.slipstream$frameFutureRef.get();
     }
 
     @Override

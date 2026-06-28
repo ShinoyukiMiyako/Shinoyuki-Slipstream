@@ -55,12 +55,23 @@ public final class PacketTelemetry {
         connections.remove(stats);
     }
 
+    // Bound the dedup tracking so a long-lived large world cannot grow chunkFanout without limit.
+    private static final int MAX_TRACKED_CHUNK_POSITIONS = 200_000;
+
     public void recordChunkSend(int x, int z, long connId, boolean firstEncodeOfInstance) {
         chunkTotalSends.increment();
         if (firstEncodeOfInstance) {
             chunkInstances.increment();
         }
-        chunkFanout.computeIfAbsent(packKey(x, z), k -> ConcurrentHashMap.newKeySet()).add(connId);
+        long key = packKey(x, z);
+        Set<Long> receivers = chunkFanout.get(key);
+        if (receivers == null) {
+            if (chunkFanout.size() >= MAX_TRACKED_CHUNK_POSITIONS) {
+                return;   // tracking capped; metric stays approximate, memory stays bounded.
+            }
+            receivers = chunkFanout.computeIfAbsent(key, k -> ConcurrentHashMap.newKeySet());
+        }
+        receivers.add(connId);
     }
 
     public long chunkTotalSends() {

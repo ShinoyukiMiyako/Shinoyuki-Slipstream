@@ -5,42 +5,99 @@ import com.shinoyuki.slipstream.telemetry.ConnectionStats;
 import com.shinoyuki.slipstream.telemetry.PacketTelemetry;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
+import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 
+import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Helpers for the serialize-once broadcast share: a thread-local bypass (so the fallback normal send
- * does not re-enter the intercept) and the pre-compressed frame writer.
+ * Serialize-once broadcast share, ordering-preserving form. While a deferred recipient's
+ * ChunkMap.playerLoadedChunk runs (main thread), every send it makes to that recipient is captured here
+ * instead of sent. Once the chunk's compressed frame is ready, the captured packets are flushed in their
+ * original order on the recipient's event loop: the chunk packet reuses the shared compressed frame
+ * (skipping the Deflater), everything else goes via a normal send. This keeps the chunk ahead of the
+ * follow-up packets (entity tracking / leash / passengers) exactly as vanilla does.
  */
 public final class BroadcastShare {
 
-    private static final ThreadLocal<Boolean> BYPASS = new ThreadLocal<>();
+    public static final class Capture {
+        public final Connection connection;
+        private final List<Queued> queued = new ArrayList<>(4);
 
-    public static boolean bypassing() {
-        return BYPASS.get() != null;
-    }
+        Capture(Connection connection) {
+            this.connection = connection;
+        }
 
-    public static void markBypass(boolean on) {
-        if (on) {
-            BYPASS.set(Boolean.TRUE);
-        } else {
-            BYPASS.remove();
+        public void add(Packet<?> packet, @Nullable PacketSendListener listener) {
+            this.queued.add(new Queued(packet, listener));
         }
     }
 
-    /**
-     * Write an already-compressed frame to a recipient, entering the pipeline just after the
-     * compression stage so it skips PacketEncoder + CompressionEncoder but is still length-prefixed
-     * (prepender) and encrypted (the per-connection CipherEncoder) before the socket. Runs on the
-     * channel event loop.
-     */
-    public static void sendPreCompressed(Channel channel, ChannelHandlerContext compressCtx,
-                                         ClientboundLevelChunkWithLightPacket packet, byte[] frame, int uncompressed) {
+    private static final class Queued {
+        final Packet<?> packet;
+        final PacketSendListener listener;
+
+        Queued(Packet<?> packet, @Nullable PacketSendListener listener) {
+            this.packet = packet;
+            this.listener = listener;
+        }
+    }
+
+    private static final ThreadLocal<Capture> CAPTURE = new ThreadLocal<>();
+
+    public static void beginCapture(Connection connection) {
+        CAPTURE.set(new Capture(connection));
+    }
+
+    @Nullable
+    public static Capture active() {
+        return CAPTURE.get();
+    }
+
+    @Nullable
+    public static Capture endCapture() {
+        Capture c = CAPTURE.get();
+        CAPTURE.remove();
+        return c;
+    }
+
+    /** Flush captured packets in order on the recipient's event loop. Per-item try/catch + a normal-send
+     *  last resort guarantee no packet is silently dropped if the pre-compressed write throws. */
+    public static void flush(Capture cap, ClientboundLevelChunkWithLightPacket chunkPacket,
+                             @Nullable byte[] frame, int uncompressed, @Nullable Throwable error) {
+        Connection conn = cap.connection;
+        Channel channel = conn.channel();
+        ChannelHandlerContext compressCtx = (channel != null) ? channel.pipeline().context("compress") : null;
+        for (Queued q : cap.queued) {
+            try {
+                if (q.packet == chunkPacket && frame != null && compressCtx != null) {
+                    sendPreCompressed(channel, compressCtx, chunkPacket, frame, uncompressed);
+                } else {
+                    conn.send(q.packet, q.listener);
+                }
+            } catch (Throwable t) {
+                try {
+                    conn.send(q.packet, q.listener);
+                } catch (Throwable ignored) {
+                    // connection is going away; nothing more we can do for this packet.
+                }
+            }
+        }
+    }
+
+    private static void sendPreCompressed(Channel channel, ChannelHandlerContext compressCtx,
+                                          ClientboundLevelChunkWithLightPacket packet, byte[] frame, int uncompressed) {
         ByteBuf buf = channel.alloc().buffer(frame.length);
         buf.writeBytes(frame);
-        compressCtx.writeAndFlush(buf);
+        // Mirror vanilla doSendPacket: surface write failures to Connection.exceptionCaught.
+        compressCtx.writeAndFlush(buf).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
 
-        // Deferred sends bypass the encoder telemetry taps, so account for them here to keep the report whole.
         PacketTelemetry telemetry = PacketTelemetry.get();
         telemetry.recordChunkCompressSkipped();
         if (!SlipstreamConfig.telemetryEnabled()) {
