@@ -30,6 +30,7 @@ public final class PacketTelemetry {
     // redundant = total - distinct = serialize-once 广播能省下的序列化+压缩次数。
     private final Map<Long, Set<Long>> chunkFanout = new ConcurrentHashMap<>();
     private final LongAdder chunkTotalSends = new LongAdder();
+    private final LongAdder chunkInstances = new LongAdder();
 
     private volatile long startMillis = System.currentTimeMillis();
 
@@ -53,8 +54,11 @@ public final class PacketTelemetry {
         connections.remove(stats);
     }
 
-    public void recordChunkSend(int x, int z, long connId) {
+    public void recordChunkSend(int x, int z, long connId, boolean firstEncodeOfInstance) {
         chunkTotalSends.increment();
+        if (firstEncodeOfInstance) {
+            chunkInstances.increment();
+        }
         chunkFanout.computeIfAbsent(packKey(x, z), k -> ConcurrentHashMap.newKeySet()).add(connId);
     }
 
@@ -77,6 +81,13 @@ public final class PacketTelemetry {
         return sum;
     }
 
+    // distinct ClientboundLevelChunkWithLightPacket 实例数 (markEncode 首次返回 1 的次数)。
+    // safeCapturable = totalSends - instances (同一实例的广播 pass 内 serialize-once, 零失效)。
+    // cacheExtra     = instances  - distinctChunks (同 chunk 跨实例/移动路径, 需 chunkPos+版本 缓存)。
+    public long chunkDistinctInstances() {
+        return chunkInstances.sum();
+    }
+
     public long startMillis() {
         return startMillis;
     }
@@ -85,6 +96,7 @@ public final class PacketTelemetry {
         global.clear();
         chunkFanout.clear();
         chunkTotalSends.reset();
+        chunkInstances.reset();
         for (ConnectionStats stats : connections) {
             stats.byType().clear();
         }

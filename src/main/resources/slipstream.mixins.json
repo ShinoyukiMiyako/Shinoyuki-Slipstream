@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "slipstream.refmap.json",
   "mixins": [
+    "ChunkPacketMixin",
     "CompressionEncoderMixin",
     "PacketEncoderMixin"
   ],

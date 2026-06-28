@@ -55,22 +55,27 @@ public final class TelemetryReport {
         long chunkSends = t.chunkTotalSends();
         long distinct = t.chunkDistinct();
         long pairs = t.chunkDistinctPlayerPairs();
+        long instances = t.chunkDistinctInstances();
         if (chunkSends > 0) {
+            long safeCapturable = chunkSends - instances;   // 同一实例的同步广播 pass: serialize-once, 零失效
+            long cacheExtra = instances - distinct;          // 同 chunk 跨实例 (移动路径): 需 chunkPos+版本 缓存
             long broadcastRedundant = pairs - distinct;
             long temporalRedundant = chunkSends - pairs;
             long totalRedundant = chunkSends - distinct;
             line(sb, "");
             line(sb, String.format(Locale.ROOT,
-                    "chunk: %d sends, %d distinct chunks, %d (chunk,player) pairs",
-                    chunkSends, distinct, pairs));
+                    "chunk: %d sends, %d distinct chunks, %d packet instances, %d (chunk,player) pairs",
+                    chunkSends, distinct, instances, pairs));
             line(sb, String.format(Locale.ROOT,
-                    "  broadcast redundant (serialize-once-broadcast saves this CPU): %d = %.1f%% of sends",
-                    broadcastRedundant, 100.0 * broadcastRedundant / chunkSends));
+                    "  [P0-safe ] broadcast-pass redundant (serialize-once, zero invalidation): %d = %.1f%% of sends",
+                    safeCapturable, 100.0 * safeCapturable / chunkSends));
             line(sb, String.format(Locale.ROOT,
-                    "  temporal  redundant (same player revisits; needs short-lived cache): %d = %.1f%% of sends",
-                    temporalRedundant, 100.0 * temporalRedundant / chunkSends));
+                    "  [P0-cache] cross-instance same-chunk (needs versioned cache, transient-desync risk): %d = %.1f%% of sends",
+                    cacheExtra, 100.0 * cacheExtra / chunkSends));
             line(sb, String.format(Locale.ROOT,
-                    "  combined dedupable: %.1f%%", 100.0 * totalRedundant / chunkSends));
+                    "  (by player: broadcast %.1f%% / temporal %.1f%% ; combined dedupable %.1f%%)",
+                    100.0 * broadcastRedundant / chunkSends, 100.0 * temporalRedundant / chunkSends,
+                    100.0 * totalRedundant / chunkSends));
         }
 
         List<ConnectionStats> conns = new ArrayList<>(t.connections());

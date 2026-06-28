@@ -1,6 +1,7 @@
 package com.shinoyuki.slipstream.mixin;
 
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
+import com.shinoyuki.slipstream.telemetry.ChunkEncodeProbe;
 import com.shinoyuki.slipstream.telemetry.ConnectionStats;
 import com.shinoyuki.slipstream.telemetry.PacketTelemetry;
 import io.netty.buffer.ByteBuf;
@@ -41,9 +42,11 @@ public abstract class PacketEncoderMixin {
             stats.type(label).addUncompressed(uncompressed);
         }
 
-        // chunk 发送带上连接 id, 供 broadcast(跨玩家) vs temporal(同玩家重访) 冗余拆分。
+        // chunk 发送带上连接 id + 该实例是否首次编码, 供拆分:
+        // 同步广播 pass (同实例多连接, P0-safe serialize-once 可省) vs 移动路径/跨实例 (需版本缓存)。
         if (SlipstreamConfig.trackChunkDedup() && packet instanceof ClientboundLevelChunkWithLightPacket chunkPacket) {
-            telemetry.recordChunkSend(chunkPacket.getX(), chunkPacket.getZ(), stats.id());
+            int encodeOrdinal = ((ChunkEncodeProbe) chunkPacket).slipstream$markEncode();
+            telemetry.recordChunkSend(chunkPacket.getX(), chunkPacket.getZ(), stats.id(), encodeOrdinal == 1);
         }
     }
 
