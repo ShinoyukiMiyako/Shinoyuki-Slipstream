@@ -58,8 +58,9 @@ public final class ConfigSpec {
                          "Every other connection -- vanilla client, vanilla server, or this disabled on either side --",
                          "stays on byte-for-byte vanilla zlib, so there is no compatibility cost. Cuts chunk-packet",
                          "bytes on the wire roughly 15-35%. Toggling requires a restart: the capability channel is",
-                         "registered once at startup, and that registration is what makes the codec eligible.")
-                .define("zstdEnabled", false);
+                         "registered once at startup, and that registration is what makes the codec eligible.",
+                         "Default on: it only engages between two Slipstream ends, so a vanilla peer is never affected.")
+                .define("zstdEnabled", true);
 
         ZSTD_LEVEL = b
                 .comment("zstd compression level on the network hot path. 1-3 trade ratio for CPU; 3 is the default.",
