@@ -5,19 +5,24 @@ import com.github.luben.zstd.ZstdDecompressCtx;
 import io.netty.handler.codec.DecoderException;
 
 import java.util.Arrays;
+import java.util.zip.DataFormatException;
+import java.util.zip.Inflater;
 
 /**
  * zstd framing that reproduces vanilla's compression envelope byte-for-byte (see {@code CompressionEncoder} /
  * {@code CompressionDecoder}): a leading Minecraft VarInt carries the uncompressed length, 0 meaning "stored,
  * not compressed". Only the payload codec is swapped from zlib to zstd; the discriminator is identical, so the
- * surrounding pipeline (length splitter, cipher) is untouched. Pure byte[] logic with no netty/Minecraft
- * coupling beyond {@link DecoderException}, so it unit-tests against zstd-jni alone.
+ * surrounding pipeline (length splitter, cipher) is untouched.
+ *
+ * <p><b>Adaptive decode.</b> The decoder is codec-agnostic: it sniffs the payload magic and decompresses with
+ * zstd ({@code 28 B5 2F FD}) or falls back to zlib inflate otherwise. This makes the codec swap resilient to an
+ * ASYMMETRIC negotiation -- if one end installed the zstd encoder and the peer did not, the peer still receives a
+ * vanilla zlib frame and decodes it correctly instead of throwing "Unknown frame descriptor". Both ends install
+ * this decoder whenever zstd is enabled locally, so neither direction can be left undecodable.
  *
  * <p>Size bounds, unlike vanilla's fixed 8 MiB / 2 MiB: the compressed input is already bounded by the outer
- * length framing (which mods like XLPackets / PacketFixer raise to allow large packets), so no separate
- * compressed cap is imposed here -- imposing one would reject those legitimately-large packets. Only a single
- * configurable uncompressed bound is checked, and only on validated (server-inbound) frames, purely as a
- * decompression-bomb guard against a malicious client; trusted server-to-client frames are not bounded.
+ * length framing, so no separate compressed cap is imposed here. Only a single configurable uncompressed bound is
+ * checked, and only on validated (server-inbound) frames, as a decompression-bomb guard.
  */
 public final class ZstdFrameCodec {
 
@@ -35,8 +40,12 @@ public final class ZstdFrameCodec {
         return out;
     }
 
+    /**
+     * Adaptive decompress. {@code zctx} handles zstd payloads; {@code inflater} handles a zlib fallback (a peer
+     * that did not swap to zstd). Reproduces vanilla's STORED / size-validate semantics for both codecs.
+     */
     public static byte[] decompress(byte[] frame, int threshold, boolean validate, int maxUncompressed,
-                                    ZstdDecompressCtx ctx) {
+                                    ZstdDecompressCtx zctx, Inflater inflater) {
         int pos = 0;
         int uncompressed = 0;
         int shift = 0;
@@ -64,7 +73,50 @@ public final class ZstdFrameCodec {
             }
         }
         byte[] compressed = Arrays.copyOfRange(frame, pos, frame.length);
-        return ctx.decompress(compressed, uncompressed);
+        if (isZstdMagic(compressed)) {
+            return zctx.decompress(compressed, uncompressed);
+        }
+        return inflateZlib(compressed, uncompressed, inflater);
+    }
+
+    /** True iff this frame is compressed (not stored) and its payload is NOT a zstd frame -- i.e. a zlib frame
+     *  from a peer that stayed on vanilla compression. Used only to log the asymmetry once per connection. */
+    public static boolean isZlibFallback(byte[] frame) {
+        int pos = 0;
+        int uncompressed = 0;
+        int shift = 0;
+        byte b;
+        do {
+            if (pos >= frame.length || shift >= 35) {
+                return false;
+            }
+            b = frame[pos++];
+            uncompressed |= (b & 0x7F) << shift;
+            shift += 7;
+        } while ((b & 0x80) != 0);
+        if (uncompressed == 0) {
+            return false;   // stored, codec-agnostic
+        }
+        return !isZstdMagic(Arrays.copyOfRange(frame, pos, frame.length));
+    }
+
+    private static boolean isZstdMagic(byte[] data) {
+        return data.length >= 4
+                && data[0] == (byte) 0x28 && data[1] == (byte) 0xB5
+                && data[2] == (byte) 0x2F && data[3] == (byte) 0xFD;
+    }
+
+    // Mirror of vanilla CompressionDecoder's zlib path: inflate the deflated payload into exactly the declared size.
+    private static byte[] inflateZlib(byte[] compressed, int uncompressed, Inflater inflater) {
+        inflater.reset();
+        inflater.setInput(compressed);
+        byte[] out = new byte[uncompressed];
+        try {
+            inflater.inflate(out);
+        } catch (DataFormatException e) {
+            throw new DecoderException("Badly compressed packet - zlib fallback inflate failed", e);
+        }
+        return out;
     }
 
     // Minecraft VarInt (LEB128: 7 data bits + continuation bit), max 5 bytes for an int.

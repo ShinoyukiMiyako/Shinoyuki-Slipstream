@@ -5,6 +5,7 @@ import com.shinoyuki.slipstream.compress.ConnectionCodec;
 import com.shinoyuki.slipstream.compress.WireCodec;
 import com.shinoyuki.slipstream.compress.ZstdDecoder;
 import com.shinoyuki.slipstream.compress.ZstdEncoder;
+import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import net.minecraft.network.Connection;
@@ -32,22 +33,26 @@ public abstract class ConnectionCompressionMixin {
 
     @Inject(method = "setupCompression(IZ)V", at = @At("TAIL"))
     private void slipstream$swapToZstd(int threshold, boolean validateDecompressed, CallbackInfo ci) {
-        if (threshold < 0 || isMemoryConnection()) {
-            return;   // compression disabled, or loopback has no compress handlers to replace.
+        if (threshold < 0 || isMemoryConnection() || !SlipstreamConfig.zstdEnabled()) {
+            return;   // compression off / loopback / zstd disabled locally -> leave vanilla zlib.
         }
-        if (ConnectionCodec.of(this.channel) != WireCodec.ZSTD) {
-            return;
-        }
+        // Split the swap so an asymmetric negotiation cannot break the wire:
+        //  - DECODER: install the adaptive (zstd-or-zlib) decoder whenever WE run zstd, so we can decode whatever
+        //    the peer actually sends -- even if the peer's encoder stayed on zlib.
+        //  - ENCODER: send zstd only to a peer that negotiated zstd (it has the adaptive decoder and asked for it).
+        boolean peerZstd = ConnectionCodec.of(this.channel) == WireCodec.ZSTD;
         ChannelPipeline pipeline = this.channel.pipeline();
-        if (pipeline.get("compress") instanceof ZstdEncoder) {
-            return;   // already swapped.
+        boolean decoderSwapped = false;
+        boolean encoderSwapped = false;
+        if (pipeline.get("decompress") != null && !(pipeline.get("decompress") instanceof ZstdDecoder)) {
+            pipeline.replace("decompress", "decompress", new ZstdDecoder(threshold, validateDecompressed, peerZstd));
+            decoderSwapped = true;
         }
-        if (pipeline.get("compress") != null) {
+        if (peerZstd && pipeline.get("compress") != null && !(pipeline.get("compress") instanceof ZstdEncoder)) {
             pipeline.replace("compress", "compress", new ZstdEncoder(threshold));
+            encoderSwapped = true;
         }
-        if (pipeline.get("decompress") != null) {
-            pipeline.replace("decompress", "decompress", new ZstdDecoder(threshold, validateDecompressed));
-        }
-        Slipstream.LOGGER.debug("[Slipstream] wire codec swapped to zstd (threshold={})", threshold);
+        Slipstream.LOGGER.info("[Slipstream] codec setup: peerZstd={} -> adaptive-decoder={} zstd-encoder={} (threshold={})",
+                peerZstd, decoderSwapped, encoderSwapped, threshold);
     }
 }

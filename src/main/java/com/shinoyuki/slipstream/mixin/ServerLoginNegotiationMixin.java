@@ -28,6 +28,6 @@ public abstract class ServerLoginNegotiationMixin {
     private void slipstream$negotiateCodec(CallbackInfo ci) {
         boolean zstd = SlipstreamNetwork.remoteSupportsZstd(this.connection);
         ConnectionCodec.set(this.connection.channel(), zstd ? WireCodec.ZSTD : WireCodec.ZLIB);
-        Slipstream.LOGGER.debug("[Slipstream] login negotiation (server): remote zstd-capable={}", zstd);
+        Slipstream.LOGGER.info("[Slipstream] login negotiation (server): remote zstd-capable={}", zstd);
     }
 }
