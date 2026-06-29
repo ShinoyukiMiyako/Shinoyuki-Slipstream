@@ -65,9 +65,12 @@ public final class ConfigSpec {
                 .define("zstdEnabled", true);
 
         ZSTD_LEVEL = b
-                .comment("zstd compression level on the network hot path. 1-3 trade ratio for CPU; 3 is the default.",
-                         "Higher levels cost more netty-thread CPU per packet for diminishing size gains.")
-                .defineInRange("zstdLevel", 3, 1, 9);
+                .comment("zstd compression level on the network hot path. Range 1-19; 3 is the default.",
+                         "Higher levels cut chunk-packet bytes more (codec_bench on real chunks: zstd-9 ~-2% / zstd-19",
+                         "~-11% vs vanilla zlib) at rising netty event-loop CPU per packet. Chunks are low-frequency",
+                         "big packets so high levels are affordable there; zstd-19 measured ~4-9 MB/s, so before raising",
+                         "this on a busy server profile the event-loop CPU under real player load (chunk-flood on join).")
+                .defineInRange("zstdLevel", 3, 1, 19);
 
         ZSTD_MAX_UNCOMPRESSED_MIB = b
                 .comment("Decompression-bomb guard: reject a server-INBOUND (client->server) zstd frame whose",
