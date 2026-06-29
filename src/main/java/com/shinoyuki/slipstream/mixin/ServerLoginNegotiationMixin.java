@@ -1,5 +1,6 @@
 package com.shinoyuki.slipstream.mixin;
 
+import com.shinoyuki.slipstream.RequireClientPolicy;
 import com.shinoyuki.slipstream.Slipstream;
 import com.shinoyuki.slipstream.aggregate.AggregateNetwork;
 import com.shinoyuki.slipstream.aggregate.AggregateOutboundHandler;
@@ -14,6 +15,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import net.minecraft.network.Connection;
 import net.minecraft.network.ConnectionProtocol;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerLoginPacketListenerImpl;
 import org.spongepowered.asm.mixin.Final;
@@ -22,6 +24,8 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.List;
 
 /**
  * Server-side codec negotiation. The FML login handshake (mod list + channel exchange) has completed by the
@@ -36,9 +40,14 @@ public abstract class ServerLoginNegotiationMixin {
 
     @Shadow @Final MinecraftServer server;
 
-    @Inject(method = "handleAcceptedLogin", at = @At("HEAD"))
+    @Shadow public abstract void disconnect(Component reason);
+
+    @Inject(method = "handleAcceptedLogin", at = @At("HEAD"), cancellable = true)
     private void slipstream$negotiateCodec(CallbackInfo ci) {
         boolean zstd = SlipstreamNetwork.remoteSupportsZstd(this.connection);
+        if (SlipstreamConfig.requireClient() && slipstream$rejectIfClientMissing(zstd, ci)) {
+            return;   // 已 disconnect + cancel: 不再设 codec / 不装任何 handler。
+        }
         ConnectionCodec.set(this.connection.channel(), zstd ? WireCodec.ZSTD : WireCodec.ZLIB);
         Slipstream.LOGGER.info("[Slipstream] login negotiation (server): remote zstd-capable={}", zstd);
         if (zstd && SlipstreamConfig.zstdEnabled()) {
@@ -51,6 +60,25 @@ public abstract class ServerLoginNegotiationMixin {
         if (SlipstreamConfig.l2Enabled() && L2Network.remoteSupportsL2(this.connection)) {
             slipstream$installServerL2Encode();
         }
+    }
+
+    /**
+     * requireClient 强制双端: 服务端已启用的协商优化, 客户端必须也启用, 否则登录期踢出。返回 true 表示已拒绝,
+     * 调用方应立即 return (此时已 disconnect + ci.cancel)。仅在 requireClient 开启时调用; 语义见
+     * {@link RequireClientPolicy} —— 只要求服务端自己开了的能力, remoteSupports=false 即客户端未装或未开该项。
+     */
+    private boolean slipstream$rejectIfClientMissing(boolean zstdRemote, CallbackInfo ci) {
+        List<String> missing = RequireClientPolicy.missingCapabilities(
+                SlipstreamConfig.zstdEnabled(), zstdRemote,
+                SlipstreamConfig.aggregateEnabled(), AggregateNetwork.remoteSupportsAggregate(this.connection),
+                SlipstreamConfig.l2Enabled(), L2Network.remoteSupportsL2(this.connection));
+        if (missing.isEmpty()) {
+            return false;
+        }
+        Slipstream.LOGGER.info("[Slipstream] requireClient 拒绝连接: 客户端缺失 {}", missing);
+        this.disconnect(Component.literal("本服要求安装 Slipstream 并启用: " + String.join("、", missing)));
+        ci.cancel();
+        return true;
     }
 
     /**

@@ -18,6 +18,7 @@ public final class ConfigSpec {
     public static final ForgeConfigSpec.BooleanValue AGGREGATE_ENABLED;
     public static final ForgeConfigSpec.IntValue AGGREGATE_WINDOW_MS;
     public static final ForgeConfigSpec.BooleanValue L2_ENABLED;
+    public static final ForgeConfigSpec.BooleanValue REQUIRE_CLIENT;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -111,6 +112,16 @@ public final class ConfigSpec {
                          "smooth motion collapses to sub-byte fields. Lossless; ~+15-21pp on top of aggregation+zstd in",
                          "combat. Dual-end: engages only between two Slipstream ends that both enabled it. Off until shipped.")
                 .define("l2Enabled", false);
+
+        REQUIRE_CLIENT = b
+                .comment("Require client-side Slipstream (server-side enforcement). When true, the server disconnects",
+                         "during login any client that has not enabled every negotiated optimization the server itself",
+                         "enabled (zstd / aggregation / entity-delta) -- the client must run Slipstream with those on.",
+                         "For large servers that must guarantee every player runs the optimizations and cannot opt out.",
+                         "Default false keeps the server-optional contract (vanilla / unmodded clients connect and the",
+                         "optimizations simply do not engage); turning this ON trades that vanilla compatibility for",
+                         "guaranteed dual-end optimization. Only capabilities the server itself enabled are required.")
+                .define("requireClient", false);
 
         b.pop();
         SPEC = b.build();

@@ -24,6 +24,7 @@ public final class SlipstreamConfig {
     private static volatile boolean aggregateEnabled;
     private static volatile int aggregateWindowMs;
     private static volatile boolean l2Enabled;
+    private static volatile boolean requireClient;
 
     public static boolean telemetryEnabled() {
         return telemetryEnabled;
@@ -73,6 +74,10 @@ public final class SlipstreamConfig {
         return l2Enabled;
     }
 
+    public static boolean requireClient() {
+        return requireClient;
+    }
+
     public static void onLoad(ModConfigEvent.Loading event) {
         refresh();
         LOGGER.info("[Slipstream] config loaded enabled={} perPlayer={} chunkDedup={} serializeOnce={} zstd={}/{}",
@@ -98,6 +103,7 @@ public final class SlipstreamConfig {
         aggregateEnabled = ConfigSpec.AGGREGATE_ENABLED.get();
         aggregateWindowMs = ConfigSpec.AGGREGATE_WINDOW_MS.get();
         l2Enabled = ConfigSpec.L2_ENABLED.get();
+        requireClient = ConfigSpec.REQUIRE_CLIENT.get();
     }
 
     private SlipstreamConfig() {
