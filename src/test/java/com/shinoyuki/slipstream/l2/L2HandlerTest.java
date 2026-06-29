@@ -1,5 +1,7 @@
 package com.shinoyuki.slipstream.l2;
 
+import com.shinoyuki.slipstream.aggregate.AggregateOutboundHandler;
+import com.shinoyuki.slipstream.aggregate.DeaggregateInboundHandler;
 import com.shinoyuki.slipstream.l2.L2FieldCodec.FieldKind;
 import com.shinoyuki.slipstream.l2.L2FieldCodec.L2Type;
 import io.netty.buffer.ByteBuf;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -115,6 +118,58 @@ class L2HandlerTest {
         ByteBuf frame = server.readOutbound();
         client.writeInbound(frame);
         assertArrayEquals(loginPkt, drain(client.readInbound()), "登录期帧必须原样透传不打 TAG");
+        server.finish();
+        client.finish();
+    }
+
+    @Test
+    void l2ThenAggregateChainRoundTrips() {
+        // 全链路数据组合契约: 出站 encoder -> L2encode -> AGG, 入站 DEAGG -> L2decode -> decoder。EmbeddedChannel
+        // 出站逆序处理, 故 server=(AGG, L2encode) 让 writeOutbound 先过 L2encode 再 AGG; client=(DEAGG, L2decode)
+        // 入站顺序处理。混合实体包 (delta) + 非实体包 (RAW), 验证 L2 帧能被 AGG 攒批、再 DEAGG 拆回、再 L2 还原, 逐字节一致。
+        BooleanSupplier play = () -> true;
+        EmbeddedChannel server = new EmbeddedChannel(
+                new AggregateOutboundHandler(100_000, 1 << 20, play), new L2EncodeHandler(play));
+        EmbeddedChannel client = new EmbeddedChannel(
+                new DeaggregateInboundHandler(play), new L2DecodeHandler(play));
+        Random r = new Random(99);
+        L2Type[] types = L2Type.values();
+        int[] eids = {5, 5000, 999999};
+        List<byte[]> sent = new ArrayList<>();
+
+        for (int n = 0; n < 300; n++) {
+            if (r.nextInt(4) == 0) {
+                byte[] raw = new byte[2 + r.nextInt(20)];   // 非实体包 -> RAW 透传
+                r.nextBytes(raw);
+                sent.add(raw);
+                server.attr(L2EncodeHandler.L2_TYPE).set(null);
+                server.writeOutbound(Unpooled.wrappedBuffer(raw.clone()));
+            } else {
+                L2Type type = types[r.nextInt(types.length)];
+                int eid = eids[r.nextInt(eids.length)];
+                int[] vals = new int[type.fields.length];
+                for (int i = 0; i < vals.length; i++) {
+                    vals[i] = randField(r, type.fields[i]);
+                }
+                byte[] van = vanilla(type, 44 + type.ordinal(), eid, vals);
+                sent.add(van);
+                server.attr(L2EncodeHandler.L2_TYPE).set(type);
+                server.writeOutbound(Unpooled.wrappedBuffer(van.clone()));
+            }
+        }
+        server.pipeline().remove(AggregateOutboundHandler.class);   // 排空 AGG 成批
+
+        ByteBuf batch;
+        while ((batch = server.readOutbound()) != null) {
+            client.writeInbound(batch);
+        }
+        int i = 0;
+        ByteBuf p;
+        while ((p = client.readInbound()) != null) {
+            assertArrayEquals(sent.get(i), drain(p), "L2+AGG 链路第 " + i + " 包必须逐字节还原");
+            i++;
+        }
+        assertEquals(sent.size(), i, "L2+AGG 链路收发包数必须一致");
         server.finish();
         client.finish();
     }
