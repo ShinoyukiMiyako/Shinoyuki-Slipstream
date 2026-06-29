@@ -1,6 +1,7 @@
 package com.shinoyuki.slipstream.telemetry;
 
 import com.shinoyuki.slipstream.aggregate.AggregateStats;
+import com.shinoyuki.slipstream.l2.L2Stats;
 import net.minecraft.network.Connection;
 import net.minecraft.network.PacketListener;
 import net.minecraft.server.network.ServerPlayerConnection;
@@ -72,6 +73,16 @@ public final class TelemetryReport {
                     aggPkts, aggBatches, (double) aggPkts / aggBatches,
                     payload / 1024.0, framed / 1024.0,
                     payload == 0 ? 0.0 : 100.0 * (framed - payload) / payload));
+        }
+
+        long l2Packets = L2Stats.packetsEncoded();
+        if (l2Packets > 0) {
+            long l2Raw = L2Stats.rawBytes();
+            long l2Enc = L2Stats.encodedBytes();
+            line(sb, String.format(Locale.ROOT,
+                    "L2 delta: %d entity packets  raw %.1fKB -> encoded %.1fKB (field delta %+.1f%%, pre-aggregation)",
+                    l2Packets, l2Raw / 1024.0, l2Enc / 1024.0,
+                    l2Raw == 0 ? 0.0 : 100.0 * (l2Enc - l2Raw) / l2Raw));
         }
 
         long chunkSends = t.chunkTotalSends();
@@ -154,6 +165,10 @@ public final class TelemetryReport {
                 .append(",\"batches_out\":").append(AggregateStats.batchesOut())
                 .append(",\"payload_bytes\":").append(AggregateStats.payloadBytesIn())
                 .append(",\"framed_bytes\":").append(AggregateStats.framedBytesOut())
+                .append("}")
+                .append(",\"l2\":{\"packets\":").append(L2Stats.packetsEncoded())
+                .append(",\"raw_bytes\":").append(L2Stats.rawBytes())
+                .append(",\"encoded_bytes\":").append(L2Stats.encodedBytes())
                 .append("}")
                 .append(",\"packets\":[");
         boolean first = true;

@@ -8,6 +8,8 @@ import com.shinoyuki.slipstream.compress.SlipstreamNetwork;
 import com.shinoyuki.slipstream.compress.WireCodec;
 import com.shinoyuki.slipstream.compress.ZstdEncoder;
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
+import com.shinoyuki.slipstream.l2.L2EncodeHandler;
+import com.shinoyuki.slipstream.l2.L2Network;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import net.minecraft.network.Connection;
@@ -45,6 +47,36 @@ public abstract class ServerLoginNegotiationMixin {
         if (SlipstreamConfig.aggregateEnabled() && AggregateNetwork.remoteSupportsAggregate(this.connection)) {
             slipstream$installServerAggregator();
         }
+        // L2 在 aggregate 之后调: 两者都 eventLoop.execute 排队, FIFO 保证 AGG 先装好, L2 再 addBefore(AGG)。
+        if (SlipstreamConfig.l2Enabled() && L2Network.remoteSupportsL2(this.connection)) {
+            slipstream$installServerL2Encode();
+        }
+    }
+
+    /**
+     * 出站 L2 字段 delta 编码器装在 encoder 与 AGG 之间 (出站序 encoder -&gt; L2 -&gt; AGG -&gt; compress): 锚点优先
+     * AGG_HANDLER (聚合开时), 否则退到 "encoder" (聚合关时直接 encoder -&gt; L2 -&gt; compress)。和 AGG 同在
+     * handleAcceptedLogin、同样 eventLoop.execute 在玩家放置前就位; 按连接 PLAY 协议状态门控, 登录期透传。与 AGG
+     * 同前提: 仅压缩开启 (threshold &gt;= 0) 时启用 (L2 帧最终仍要经 compress)。
+     */
+    private void slipstream$installServerL2Encode() {
+        if (this.server.getCompressionThreshold() < 0) {
+            return;
+        }
+        Channel channel = this.connection.channel();
+        channel.eventLoop().execute(() -> {
+            ChannelPipeline pipeline = channel.pipeline();
+            if (pipeline.get(L2Network.ENCODE_HANDLER) != null) {
+                return;
+            }
+            String anchor = pipeline.get(AggregateNetwork.AGG_HANDLER) != null
+                    ? AggregateNetwork.AGG_HANDLER : "encoder";
+            if (pipeline.get(anchor) != null) {
+                pipeline.addBefore(anchor, L2Network.ENCODE_HANDLER, new L2EncodeHandler(
+                        () -> channel.attr(Connection.ATTRIBUTE_PROTOCOL).get() == ConnectionProtocol.PLAY));
+                Slipstream.LOGGER.info("[Slipstream] L2 entity-delta encoder installed (server->client)");
+            }
+        });
     }
 
     /**

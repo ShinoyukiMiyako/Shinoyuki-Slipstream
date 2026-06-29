@@ -17,6 +17,7 @@ public final class ConfigSpec {
     public static final ForgeConfigSpec.BooleanValue LARGE_PACKET_ENABLED;
     public static final ForgeConfigSpec.BooleanValue AGGREGATE_ENABLED;
     public static final ForgeConfigSpec.IntValue AGGREGATE_WINDOW_MS;
+    public static final ForgeConfigSpec.BooleanValue L2_ENABLED;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -103,6 +104,13 @@ public final class ConfigSpec {
                          "but more added latency; 20ms (sub-tick) is near-imperceptible. Critical packets (keep-alive)",
                          "bypass the window and flush immediately.")
                 .defineInRange("aggregateWindowMs", 20, 5, 100);
+
+        L2_ENABLED = b
+                .comment("Entity-field delta (P1, combat regime). Re-encode the high-frequency entity-state packets",
+                         "(motion / move / head-rotate) as per-entity per-field zigzag-varint deltas before aggregation:",
+                         "smooth motion collapses to sub-byte fields. Lossless; ~+15-21pp on top of aggregation+zstd in",
+                         "combat. Dual-end: engages only between two Slipstream ends that both enabled it. Off until shipped.")
+                .define("l2Enabled", false);
 
         b.pop();
         SPEC = b.build();

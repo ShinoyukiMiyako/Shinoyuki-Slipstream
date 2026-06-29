@@ -6,6 +6,7 @@ import com.shinoyuki.slipstream.command.SlipstreamCommand;
 import com.shinoyuki.slipstream.compress.SlipstreamNetwork;
 import com.shinoyuki.slipstream.config.ConfigSpec;
 import com.shinoyuki.slipstream.config.SlipstreamConfig;
+import com.shinoyuki.slipstream.l2.L2Network;
 import com.shinoyuki.slipstream.telemetry.PacketTelemetry;
 import com.shinoyuki.slipstream.telemetry.TelemetryReport;
 import net.minecraftforge.common.MinecraftForge;
@@ -87,6 +88,11 @@ public final class Slipstream {
             event.enqueueWork(AggregateNetwork::register);
             LOGGER.info("[Slipstream] small-packet aggregation enabled (window {}ms); capability channel registered",
                     SlipstreamConfig.aggregateWindowMs());
+        }
+
+        if (SlipstreamConfig.l2Enabled()) {
+            event.enqueueWork(L2Network::register);
+            LOGGER.info("[Slipstream] L2 entity-field delta enabled (combat regime); capability channel registered");
         }
     }
 
