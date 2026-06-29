@@ -20,3 +20,4 @@ out/
 
 # os / logs
 *.log
+*.log.gz
