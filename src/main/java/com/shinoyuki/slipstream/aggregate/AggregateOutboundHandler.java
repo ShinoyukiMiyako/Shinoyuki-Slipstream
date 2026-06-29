@@ -93,15 +93,18 @@ public final class AggregateOutboundHandler extends ChannelOutboundHandlerAdapte
         pendingBytes = 0;
 
         ByteBuf out = ctx.alloc().buffer();
+        long payloadBytes = 0;
         try {
             if (batch.size() == 1) {
                 // 窗内只一个包: RAW 标记 + 单包原文, 省掉 count/len 开销。
+                payloadBytes = batch.get(0).readableBytes();
                 out.writeByte(AggregateFrameCodec.TAG_RAW);
                 out.writeBytes(batch.get(0));
             } else {
                 out.writeByte(AggregateFrameCodec.TAG_BATCH);
                 AggregateFrameCodec.writeVarInt(out, batch.size());
                 for (ByteBuf b : batch) {
+                    payloadBytes += b.readableBytes();
                     AggregateFrameCodec.writeVarInt(out, b.readableBytes());
                     out.writeBytes(b);
                 }
@@ -117,6 +120,8 @@ public final class AggregateOutboundHandler extends ChannelOutboundHandlerAdapte
                 b.release();
             }
         }
+        // 自度量: 攒了几个包 / 入站负载 / 成帧字节 (压缩前)。压缩后 wire 由下游 ZstdEncoder 计入 telemetry。
+        AggregateStats.recordBatch(batch.size(), payloadBytes, out.readableBytes());
 
         ChannelPromise combined = ctx.newPromise();
         combined.addListener(f -> {

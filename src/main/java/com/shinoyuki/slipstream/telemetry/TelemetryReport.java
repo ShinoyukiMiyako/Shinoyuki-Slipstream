@@ -1,5 +1,6 @@
 package com.shinoyuki.slipstream.telemetry;
 
+import com.shinoyuki.slipstream.aggregate.AggregateStats;
 import net.minecraft.network.Connection;
 import net.minecraft.network.PacketListener;
 import net.minecraft.server.network.ServerPlayerConnection;
@@ -59,6 +60,19 @@ public final class TelemetryReport {
         }
         line(sb, String.format(Locale.ROOT, "%-42s %9d %11.1f %11.1f",
                 "TOTAL", totalCount, totalCompressed / 1024.0, totalUncompressed / 1024.0));
+
+        long aggBatches = AggregateStats.batchesOut();
+        if (aggBatches > 0) {
+            long aggPkts = AggregateStats.packetsIn();
+            long payload = AggregateStats.payloadBytesIn();
+            long framed = AggregateStats.framedBytesOut();
+            line(sb, "");
+            line(sb, String.format(Locale.ROOT,
+                    "aggregation: %d packets -> %d batches (%.1f pkt/batch)  payload %.1fKB  framed %.1fKB (AGG framing overhead +%.2f%%)",
+                    aggPkts, aggBatches, (double) aggPkts / aggBatches,
+                    payload / 1024.0, framed / 1024.0,
+                    payload == 0 ? 0.0 : 100.0 * (framed - payload) / payload));
+        }
 
         long chunkSends = t.chunkTotalSends();
         long distinct = t.chunkDistinct();
@@ -136,6 +150,11 @@ public final class TelemetryReport {
                 .append(",\"connections\":").append(t.connections().size())
                 .append(",\"chunk_sends\":").append(t.chunkTotalSends())
                 .append(",\"chunk_distinct\":").append(t.chunkDistinct())
+                .append(",\"aggregation\":{\"packets_in\":").append(AggregateStats.packetsIn())
+                .append(",\"batches_out\":").append(AggregateStats.batchesOut())
+                .append(",\"payload_bytes\":").append(AggregateStats.payloadBytesIn())
+                .append(",\"framed_bytes\":").append(AggregateStats.framedBytesOut())
+                .append("}")
                 .append(",\"packets\":[");
         boolean first = true;
         for (Map.Entry<String, TypeStat> e : types) {
