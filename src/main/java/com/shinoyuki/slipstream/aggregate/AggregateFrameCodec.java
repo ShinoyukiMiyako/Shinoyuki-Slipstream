@@ -14,6 +14,14 @@ import java.util.List;
  */
 public final class AggregateFrameCodec {
 
+    /**
+     * PLAY 期每个出站帧的首字节类型标记。RAW = 后接单个序列化包 (窗内只攒到一个时省去 count/len 开销);
+     * BATCH = 后接 {@link #pack} 的 count + (len+包)* 结构。DEAGG 读首字节派发, 未知值即报错而非读越界。
+     * 登录 (非 PLAY) 期两端均透传, 不打标记, 故标记只在 PLAY 帧出现, 由连接协议状态门控对齐 (无握手窗口)。
+     */
+    public static final int TAG_RAW = 0;
+    public static final int TAG_BATCH = 1;
+
     /** 把子包负载打成一个批 blob。 */
     public static byte[] pack(List<byte[]> packets) {
         int size = varIntLen(packets.size());

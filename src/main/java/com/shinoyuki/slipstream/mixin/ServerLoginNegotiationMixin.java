@@ -1,6 +1,8 @@
 package com.shinoyuki.slipstream.mixin;
 
 import com.shinoyuki.slipstream.Slipstream;
+import com.shinoyuki.slipstream.aggregate.AggregateNetwork;
+import com.shinoyuki.slipstream.aggregate.AggregateOutboundHandler;
 import com.shinoyuki.slipstream.compress.ConnectionCodec;
 import com.shinoyuki.slipstream.compress.SlipstreamNetwork;
 import com.shinoyuki.slipstream.compress.WireCodec;
@@ -9,6 +11,7 @@ import com.shinoyuki.slipstream.config.SlipstreamConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import net.minecraft.network.Connection;
+import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerLoginPacketListenerImpl;
 import org.spongepowered.asm.mixin.Final;
@@ -39,6 +42,32 @@ public abstract class ServerLoginNegotiationMixin {
         if (zstd && SlipstreamConfig.zstdEnabled()) {
             slipstream$installServerZstdEncoder();
         }
+        if (SlipstreamConfig.aggregateEnabled() && AggregateNetwork.remoteSupportsAggregate(this.connection)) {
+            slipstream$installServerAggregator();
+        }
+    }
+
+    /**
+     * 出站聚合器装在 "encoder" 之前 (出站序 encoder -&gt; AGG -&gt; compress): 攒批后整批交给压缩。和 zstd 编码器
+     * 同在 handleAcceptedLogin (FML 握手后 capability 已知), 且必在玩家放置 (placeNewPlayer 发首批 PLAY 包) 之前
+     * 排到 event loop, 故 PLAY 包发出时 AGG 已就位。聚合器本身按连接 PLAY 协议状态门控, 登录期透传 —— 见
+     * {@link AggregateOutboundHandler}。与 zstd 同前提: 仅在压缩开启 (threshold &gt;= 0) 时启用。
+     */
+    private void slipstream$installServerAggregator() {
+        if (this.server.getCompressionThreshold() < 0) {
+            return;
+        }
+        Channel channel = this.connection.channel();
+        channel.eventLoop().execute(() -> {
+            ChannelPipeline pipeline = channel.pipeline();
+            if (pipeline.get(AggregateNetwork.AGG_HANDLER) == null && pipeline.get("encoder") != null) {
+                pipeline.addBefore("encoder", AggregateNetwork.AGG_HANDLER, new AggregateOutboundHandler(
+                        SlipstreamConfig.aggregateWindowMs(), AggregateNetwork.MAX_BATCH_BYTES,
+                        () -> channel.attr(Connection.ATTRIBUTE_PROTOCOL).get() == ConnectionProtocol.PLAY));
+                Slipstream.LOGGER.info("[Slipstream] aggregator installed (server->client, window={}ms)",
+                        SlipstreamConfig.aggregateWindowMs());
+            }
+        });
     }
 
     /**
