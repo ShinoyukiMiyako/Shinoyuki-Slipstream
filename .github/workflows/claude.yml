@@ -1,0 +1,29 @@
+name: Claude (@claude 触发)
+
+# 在 issue / PR 评论里 @claude 时触发, 用 Opus 4.8 做实质工作 (分析、改代码、答疑)。
+# 鉴权走 Claude 订阅 OAuth token (CLAUDE_CODE_OAUTH_TOKEN secret), 不消耗 API 余额。
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write  # claude-code-action 用 GitHub App + OIDC 换 token, 必须有
+
+jobs:
+  claude:
+    if: contains(github.event.comment.body, '@claude') && github.event.comment.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-opus-4-8
+            --allowedTools "Bash,Edit,Write,Read,Glob,Grep"
+            --append-system-prompt "Slipstream 是 Forge 1.20.1 网络包优化 mod (Shinoyuki 系列网络分支); 核心能力: zstd 单端可回退压缩 / 小包聚合 / L2 实体字段 delta(无损) / 大包支持 / requireClient 强制双端 / 出站遥测; 抓包诊断用游戏内 /slipstream capture 命令, 产物在 logs/slipstream/; 定位优先级是 数据安全>稳定>兼容>性能"
